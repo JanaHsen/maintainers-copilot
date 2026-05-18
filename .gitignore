@@ -42,3 +42,10 @@ Thumbs.db
 dist/
 build/
 *.egg
+# Data and model artifacts
+*.parquet
+*.pt
+*.bin
+*.safetensors
+*.pth
+*.joblib
