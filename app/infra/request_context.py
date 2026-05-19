@@ -1,18 +1,21 @@
 """Per-request correlation: a request id and the active OTel trace id.
 
-Every response carries ``X-Request-Id`` and ``X-Trace-Id`` so a log line, a
-Phoenix trace, and an HTTP response can all be cross-referenced (Rule 7).
-The values are also exposed via context vars for the logging path and via
-``request.state`` for handlers (e.g. the /health report).
+Implemented as a *pure ASGI* middleware on purpose: Starlette's
+BaseHTTPMiddleware runs the downstream app in a separate task, which drops
+the OpenTelemetry context so the request span is invisible to handlers. A
+plain ASGI middleware stays in the same context, so the trace id is real.
+
+Every response carries ``X-Request-Id`` and ``X-Trace-Id``; the values are
+also exposed via context vars (logging) and ``request.state`` (handlers).
 """
 
 import uuid
 from contextvars import ContextVar
 
-from opentelemetry import trace
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.infra.tracing import current_trace_id
 
 REQUEST_ID_HEADER = "X-Request-Id"
 TRACE_ID_HEADER = "X-Trace-Id"
@@ -29,30 +32,33 @@ def get_trace_id() -> str:
     return _trace_id_ctx.get()
 
 
-def _current_trace_id() -> str:
-    span_context = trace.get_current_span().get_span_context()
-    if span_context.trace_id:
-        return format(span_context.trace_id, "032x")
-    return ""
+class RequestContextMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
-        trace_id = _current_trace_id()
+        incoming = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        request_id = incoming.get(REQUEST_ID_HEADER.lower()) or uuid.uuid4().hex
 
-        request.state.request_id = request_id
-        request.state.trace_id = trace_id
+        state = scope.setdefault("state", {})
+        state["request_id"] = request_id
         rid_token = _request_id_ctx.set(request_id)
-        tid_token = _trace_id_ctx.set(trace_id)
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                trace_id = current_trace_id()
+                state["trace_id"] = trace_id
+                _trace_id_ctx.set(trace_id)
+                headers = MutableHeaders(scope=message)
+                headers[REQUEST_ID_HEADER] = request_id
+                headers[TRACE_ID_HEADER] = trace_id
+            await send(message)
+
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_wrapper)
         finally:
             _request_id_ctx.reset(rid_token)
-            _trace_id_ctx.reset(tid_token)
-
-        response.headers[REQUEST_ID_HEADER] = request_id
-        response.headers[TRACE_ID_HEADER] = trace_id
-        return response

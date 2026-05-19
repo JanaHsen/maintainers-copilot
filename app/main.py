@@ -63,7 +63,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.critical("REFUSE TO BOOT: MinIO dependency failed: %s", exc)
         raise
 
-    setup_tracing(app)
     logger.info("startup complete: all required dependencies reachable")
     try:
         yield
@@ -74,4 +73,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Maintainer's Copilot", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
+# Instrument at import, before the ASGI/middleware stack is built and the app
+# serves a request — instrumenting from the lifespan is too late to produce
+# spans (Rule 7: observability must actually work, not just be wired).
+setup_tracing(app)
 app.include_router(api_router)

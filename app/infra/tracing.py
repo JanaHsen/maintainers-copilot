@@ -49,3 +49,15 @@ def shutdown_tracing() -> None:
 def get_tracer(name: str = SERVICE_NAME) -> trace.Tracer:
     """Return a tracer; callers create child spans for per-dependency checks."""
     return trace.get_tracer(name)
+
+
+def current_trace_id() -> str:
+    """Active trace id as 32-hex, or "" outside a span.
+
+    Must be called from within the request span (e.g. a route handler);
+    Starlette's BaseHTTPMiddleware runs outside it.
+    """
+    span_context = trace.get_current_span().get_span_context()
+    if span_context.trace_id:
+        return format(span_context.trace_id, "032x")
+    return ""
