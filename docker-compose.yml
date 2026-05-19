@@ -81,7 +81,9 @@ services:
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
-      GITHUB_PAT: ${GITHUB_PAT:-placeholder_until_day2}
+      # Unset by default: vault_seed.sh then preserves any already-stored PAT
+      # instead of clobbering it. Operators export GITHUB_PAT for the dataset.
+      GITHUB_PAT: ${GITHUB_PAT:-}
     volumes:
       - ./scripts:/seed:ro
     restart: "no"
