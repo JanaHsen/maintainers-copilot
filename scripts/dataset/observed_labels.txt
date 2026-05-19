@@ -1,0 +1,145 @@
+7882	Bug
+2914	Enhancement
+2344	Docs
+1657	Usage Question
+1578	Indexing
+1527	Needs Triage
+1468	Datetime
+1340	Groupby
+1232	API Design
+1228	Reshaping
+1180	Dtype Conversions
+1109	Duplicate Report
+982	Regression
+931	Performance
+897	Closing Candidate
+894	Testing
+860	IO CSV
+788	Missing-data
+734	Needs Tests
+730	MultiIndex
+699	Needs Info
+673	Error Reporting
+622	Numeric Operations
+603	Visualization
+577	IO Data
+576	Build
+576	Categorical
+572	Needs Discussion
+571	CI
+544	Timezones
+530	Compat
+455	IO Excel
+438	Deprecate
+427	ExtensionArray
+419	Output-Formatting
+363	Timedelta
+337	Strings
+308	IO HDF5
+307	Apply
+290	Clean
+289	IO JSON
+281	Algos
+278	Frequency
+276	Arrow
+260	IO SQL
+257	Resample
+253	NA - MaskedArrays
+251	Window
+244	Internals
+240	Index
+219	Period
+211	Dependencies
+200	IO HTML
+194	Sparse
+182	API - Consistency
+177	Constructors
+176	Typing
+163	Code Style
+156	Styler
+152	Interval
+151	IO Parquet
+149	Reduction Operations
+129	Upstream issue
+129	Windows
+126	Refactor
+112	Warnings
+112	Blocker
+111	Unicode
+101	Copy / view semantics
+98	Non-Nano
+90	Release
+83	DataFrame
+82	Unreliable Test
+79	replace
+78	IO Stata
+75	IO LaTeX
+75	Ideas
+65	expressions
+62	Timestamp
+61	Admin
+61	Benchmark
+60	Segfault
+54	Master Tracker
+54	Series
+54	Web
+51	Nested Data
+49	IO Network
+42	IO SAS
+41	32bit
+39	Nuisance Columns
+37	IO Format Request
+33	IO Pickle
+32	datetime.date
+32	metadata
+32	Interchange
+31	Subclassing
+29	Astype
+28	Complex
+27	Transformations
+27	setops
+26	cut
+26	Community
+26	ARM
+26	quantile
+24	PDEP missing values
+24	numba
+23	duplicated
+23	Linux
+21	IO XML
+19	OS X
+19	isin
+16	setitem-with-expansion
+15	Sorting
+15	inplace
+15	IO Fixed Width
+14	hashing
+12	combine/combine_first/update
+11	PDEP6-related
+9	Multithreading
+8	pyarrow dtype retention
+8	ufuncs
+8	Vote
+8	Accessors
+8	rename
+7	Filters
+7	Multi-Block
+6	cov/corr
+5	Describe/info/etc
+5	Localization
+5	Blocker for rc
+5	PyPy
+5	Python 3.11
+4	Conditionals
+4	Python 3.13
+3	Python 3.14
+3	ExtensionArray - New Method Request
+3	Roadmap
+2	Numeric stability
+2	Blocked
+2	Python 3.12
+2	freq retention
+1	Free Threading
+1	AI Slop
+1	Nullable by default
+1	Non-Unique Columns/Rows

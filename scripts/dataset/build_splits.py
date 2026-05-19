@@ -17,7 +17,7 @@ Usage::
 """
 
 from __future__ import annotations
-
+import hashlib
 import argparse
 import io
 import json
@@ -63,7 +63,7 @@ def _read_raw(run_id: str) -> list[dict[str, object]]:
     s3 = get_client()
     prefix = f"raw/pandas/issues/{run_id}/"
     listed = s3.list_objects_v2(Bucket=DATA_BUCKET, Prefix=prefix)
-    keys = sorted(o["Key"] for o in listed.get("Contents", []))
+    keys = sorted(o["Key"] for o in listed.get("Contents", []) if o["Key"].endswith(".jsonl"))
     if not keys:
         raise SystemExit(f"no raw objects under s3://{DATA_BUCKET}/{prefix}")
     issues: list[dict[str, object]] = []
@@ -85,7 +85,12 @@ def _map_records(
     classes: dict[str, set[str]],
 ) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
+    seen: set[int] = set()
     for issue in issues:
+        number = issue.get("number")
+        if not isinstance(number, int) or number in seen:
+            continue
+        seen.add(number)
         if issue.get("pull_request") is not None:
             continue  # PRs are not issues for this task
         if not issue.get("closed_at"):
@@ -138,6 +143,25 @@ def _assign_splits(records: list[dict[str, object]]) -> None:
             r["split"] = "val" if i < k else "train"
 
 
+def _train_hash(records: list[dict[str, object]]) -> str:
+    """SHA-256 over the canonicalized train rows (sorted by issue number)."""
+    train_rows = sorted(
+        (r for r in records if r["split"] == "train"),
+        key=lambda r: int(r["issue_number"]),  # type: ignore[arg-type]
+    )
+    h = hashlib.sha256()
+    for r in train_rows:
+        canonical = {
+            "issue_number": r["issue_number"],
+            "title": r["title"],
+            "body": r["body"],
+            "target_class": r["target_class"],
+        }
+        h.update(json.dumps(canonical, sort_keys=True).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
 def _report(records: list[dict[str, object]], run_id: str) -> dict[str, object]:
     counts: dict[str, dict[str, int]] = {
         s: defaultdict(int) for s in ("train", "val", "test")
@@ -157,6 +181,7 @@ def _report(records: list[dict[str, object]], run_id: str) -> dict[str, object]:
             "train_val_max_closed_at": train_val_max.isoformat(),
             "test_min_closed_at": test_min.isoformat(),
         },
+        "training_data_sha256": _train_hash(records),
     }
 
 
