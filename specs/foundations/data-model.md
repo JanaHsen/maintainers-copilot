@@ -54,7 +54,7 @@ Validation: `dependencies` non-empty; `status == "ok"` ⟺ all
 `reachable == True`. HTTP status is always `200` when the process is up
 (FR-006/FR-007) — health content, not transport, conveys degradation.
 
-### Raw Issue Record — `raw/scikit-learn/issues/{run_id}/page_{n}.jsonl`
+### Raw Issue Record — `raw/pandas/issues/{run_id}/page_{n}.jsonl`
 
 One JSON object per line = the verbatim GitHub issue payload (unmodified).
 `run_id` is a UTC timestamp-derived id; re-runs use a new `run_id` and never
@@ -67,7 +67,7 @@ overwrite (FR-013, SC-008).
 | `issue_number` | `int` | |
 | `title` | `str` | |
 | `body` | `str` | text fed to the classifier later |
-| `labels` | `list[str]` | original scikit-learn labels |
+| `labels` | `list[str]` | original pandas labels |
 | `target_class` | `Literal["bug","feature","docs","question"]` | from `label_map.yaml` precedence; unmappable rows dropped before this stage |
 | `closed_at` | `datetime` | time key for the strict ordering |
 | `split` | `Literal["train","val","test"]` | assigned by the split logic |
@@ -84,15 +84,15 @@ classes:
 drop_if_unmapped: true                        # issues mapping to none → excluded
 ```
 
-(Concrete label lists are filled from observed scikit-learn labels during
+(Concrete label lists are filled from observed pandas labels during
 implementation; rationale recorded in `DECISIONS.md`, Rule 6.)
 
-### `splits_report.json` — `processed/scikit-learn/{run_id}/splits_report.json`
+### `splits_report.json` — `processed/pandas/{run_id}/splits_report.json`
 
 | Field | Type | Notes |
 |---|---|---|
 | `run_id` | `str` | matches the processed prefix |
-| `source` | `str` | `scikit-learn/scikit-learn` |
+| `source` | `str` | `pandas-dev/pandas` |
 | `total_mapped` | `int` | rows after dropping unmappable |
 | `counts.{split}.{class}` | `int` | per-split per-class counts |
 | `time_boundary.train_val_max_closed_at` | `datetime` | latest train/val timestamp |

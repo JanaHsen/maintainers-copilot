@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Day 1 of the Maintainer's Copilot. Scope: foundations only. Stack comes up healthy via docker-compose, /health reports upstream dependency status, api refuses to boot without Vault, tracing is scaffolded. An offline data pipeline produces a versioned, stratified, time-ordered dataset in MinIO from scikit-learn/scikit-learn closed issues. A Colab notebook kicks off DistilBERT fine-tuning. DECISIONS.md, ARCH.md, RUNBOOK.md are created."
+**Input**: User description: "Day 1 of the Maintainer's Copilot. Scope: foundations only. Stack comes up healthy via docker-compose, /health reports upstream dependency status, api refuses to boot without Vault, tracing is scaffolded. An offline data pipeline produces a versioned, stratified, time-ordered dataset in MinIO from pandas-dev/pandas closed issues. A Colab notebook kicks off DistilBERT fine-tuning. DECISIONS.md, ARCH.md, RUNBOOK.md are created."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -233,7 +233,7 @@ Every push to any branch triggers an automated pipeline that lints, type-checks,
 
 ## Assumptions
 
-- **Source repository**: Closed issues from `scikit-learn/scikit-learn` are the dataset, per the project governance binding the dataset choice.
+- **Source repository**: Closed issues from `pandas-dev/pandas` are the dataset, per the project governance binding the dataset choice.
 - **Target classes**: Exactly four — bug, feature, docs, question — per governance scope.
 - **Split ratios**: A stratified 70% train / 15% validation / 15% test split is used as a reasonable default unless the decisions log records otherwise; the strict time-ordering constraint (test newer than train/validation) takes precedence over exact ratio when the two conflict.
 - **Fetch volume**: A bounded, recent window of closed issues sufficient for a stratified four-class split is fetched; the exact count is recorded in the splits report and decisions log rather than fixed in this spec.

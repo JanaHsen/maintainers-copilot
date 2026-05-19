@@ -14,7 +14,7 @@ up cleanly from `cp .env.example .env` + `docker-compose up`. The FastAPI
 Vault, a required Vault key, Postgres, or MinIO is unreachable. `/health`
 emits one OpenTelemetry span per upstream check so a single request is a
 connected span tree in Phoenix. A standalone offline pipeline fetches
-`scikit-learn/scikit-learn` closed issues into MinIO as versioned JSONL, maps labels
+`pandas-dev/pandas` closed issues into MinIO as versioned JSONL, maps labels
 to `{bug, feature, docs, question}` via a committed YAML, and writes a
 stratified, time-ordered train/val/test split plus a splits report. A Colab
 Pro notebook fine-tunes `distilbert-base-uncased` on the train split and
@@ -41,7 +41,7 @@ correctly-shaped stubs with thresholds not yet enforced.
 
 **Constraints**: Refuse-to-boot (Rule 4) on: Vault unreachable, any required Vault key missing, Postgres unreachable after bounded retries, MinIO unreachable after bounded retries. Tracing wired from the first commit, never retrofitted (Rule 7). One-command bring-up from a clean clone (Rule 8). `.env` carries only `VAULT_DEV_ROOT_TOKEN_ID` + ports — no application secret (Rule 2).
 
-**Scale/Scope**: Solo project; one bounded recent window of scikit-learn closed issues sufficient for a stratified 4-class split; exact counts recorded in `splits_report.json` and `DECISIONS.md`.
+**Scale/Scope**: Solo project; one bounded recent window of pandas closed issues sufficient for a stratified 4-class split; exact counts recorded in `splits_report.json` and `DECISIONS.md`.
 
 ## Constitution Check
 
@@ -114,8 +114,8 @@ alembic/
 scripts/
 ├── vault_seed.sh                # Idempotent: writes dev secrets (database_password, minio_root_password, github_pat) into kv-v2
 └── dataset/
-    ├── fetch_issues.py          # GitHub REST (PAT from Vault) → MinIO raw/scikit-learn/issues/{run_id}/page_{n}.jsonl, concurrency-capped
-    ├── label_map.yaml           # scikit-learn labels → {bug,feature,docs,question} + precedence + drop rule
+    ├── fetch_issues.py          # GitHub REST (PAT from Vault) → MinIO raw/pandas/issues/{run_id}/page_{n}.jsonl, concurrency-capped
+    ├── label_map.yaml           # pandas labels → {bug,feature,docs,question} + precedence + drop rule
     └── build_splits.py          # raw→mapped→drop-unmappable→stratify→time-sort→train/val/test.parquet + splits_report.json
 
 notebooks/

@@ -65,8 +65,8 @@ dependency check.
 ## 5. Dataset pipeline (User Story 2 — P2)
 
 ```bash
-uv run python scripts/dataset/fetch_issues.py     # → raw/scikit-learn/issues/{run_id}/page_*.jsonl
-uv run python scripts/dataset/build_splits.py     # → processed/scikit-learn/{run_id}/{train,val,test}.parquet + splits_report.json
+uv run python scripts/dataset/fetch_issues.py     # → raw/pandas/issues/{run_id}/page_*.jsonl
+uv run python scripts/dataset/build_splits.py     # → processed/pandas/{run_id}/{train,val,test}.parquet + splits_report.json
 ```
 
 **Expect** (SC-006, SC-007, contracts C2–C5): only the four classes appear;

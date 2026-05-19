@@ -11,7 +11,7 @@ alternatives rejected, so `DECISIONS.md` can quote it.
 - **Rationale**: Runs locally with no external account or API key (keeps Rule 2 surface minimal), ships a usable trace UI out of the box, and natively models LLM-call spans — which Days 3–4 (RAG + chatbot) will need without a backend swap. Wiring it on Day 1 satisfies Rule 7's "never retrofitted".
 - **Alternatives considered**: Jaeger (no native LLM-span semantics; would need re-instrumentation for Days 3–4); Grafana Tempo (heavier compose footprint, separate UI stack); a hosted vendor (introduces an external secret and account dependency, violating the keep-it-local goal).
 
-## R2 — Dataset source: `scikit-learn/scikit-learn` closed issues
+## R2 — Dataset source: `pandas-dev/pandas` closed issues
 
 - **Decision**: Fetch closed issues via the GitHub REST API; PAT read from Vault, not `.env` (Rule 2).
 - **Rationale**: Binding under the constitution's Project Scope. Closed issues carry settled, human-applied labels — the supervision signal for the 4-class task. REST (not GraphQL) keeps pagination + rate-limit handling simple and auditable (Rule 9).
@@ -19,7 +19,7 @@ alternatives rejected, so `DECISIONS.md` can quote it.
 
 ## R3 — Label→class mapping strategy
 
-- **Decision**: A committed `scripts/dataset/label_map.yaml` mapping scikit-learn labels to exactly one of `{bug, feature, docs, question}`, with an explicit **precedence order** for multi-label issues and a **drop rule** for issues whose labels map to none of the four.
+- **Decision**: A committed `scripts/dataset/label_map.yaml` mapping pandas labels to exactly one of `{bug, feature, docs, question}`, with an explicit **precedence order** for multi-label issues and a **drop rule** for issues whose labels map to none of the four.
 - **Rationale**: A committed, declarative map makes the mapping reviewable and reproducible (Rule 9) and its rationale citable in `DECISIONS.md` (Rule 6). Dropping unmappable issues (rather than forcing a class) keeps labels trustworthy for downstream training.
 - **Alternatives considered**: Heuristic/keyword inference from title/body (unreproducible, unauditable); keeping multi-label rows (incompatible with single-label classification target); mapping unmappable issues to `question` as a catch-all (pollutes the class — rejected).
 

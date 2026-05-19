@@ -53,7 +53,7 @@ public read) or a fine-grained token with **Public Repositories (read-only)**.
 # 1. put a real PAT into Vault (idempotent, non-clobbering)
 GITHUB_PAT='ghp_xxx' VAULT_ADDR=http://localhost:8200 bash scripts/vault_seed.sh
 
-# 2. fetch -> raw/scikit-learn/issues/{run_id}/page_*.jsonl
+# 2. fetch -> raw/pandas/issues/{run_id}/page_*.jsonl
 VAULT_ADDR=http://localhost:8200 MINIO_HOST=localhost \
   uv run python scripts/dataset/fetch_issues.py        # note the printed run_id
 
@@ -61,7 +61,7 @@ VAULT_ADDR=http://localhost:8200 MINIO_HOST=localhost \
 MINIO_HOST=localhost \
   uv run python scripts/dataset/inventory_labels.py --run-id <run_id>
 
-# 4. build splits -> processed/scikit-learn/{run_id}/{train,val,test}.parquet + splits_report.json
+# 4. build splits -> processed/pandas/{run_id}/{train,val,test}.parquet + splits_report.json
 VAULT_ADDR=http://localhost:8200 MINIO_HOST=localhost \
   uv run python scripts/dataset/build_splits.py --run-id <run_id>
 ```
