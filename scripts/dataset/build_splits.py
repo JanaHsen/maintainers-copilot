@@ -80,6 +80,11 @@ def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _is_ci_bot_report(title: str) -> bool:
+    """scikit-learn's CI bot opens automated '⚠️ CI failed …' issues — noise."""
+    return title.startswith("⚠️ CI failed") or "CI failed on" in title[:30]
+
+
 def _map_records(
     issues: list[dict[str, object]],
     precedence: list[str],
@@ -94,6 +99,8 @@ def _map_records(
         seen.add(number)
         if issue.get("pull_request") is not None:
             continue  # PRs are not issues for this task
+        if _is_ci_bot_report(str(issue.get("title") or "")):
+            continue  # automated CI-failure issues are noise, not signal
         if not issue.get("closed_at"):
             continue
         names = [
