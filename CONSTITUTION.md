@@ -1,36 +1,42 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR — two new principles added before any code was
-  written, bringing the constitution into full alignment with the Week 7
-  brief's CI scope and chatbot resilience requirements. No existing rule
-  was modified or removed.
+Version change: 1.1.0 → 1.2.0
+Bump rationale: MINOR — dataset source changed before Day 2 work begins;
+  pandas fetch artifacts in MinIO superseded but retained for audit.
 
-Modified principles: None (Rules 1–9 unchanged)
-
-Added principles:
-  - X.  CI Discipline (Rule 10)
-  - XI. Resilient Tool Use (Rule 11)
+Modified principles: None (Rules 1–11 unchanged)
 
 Modified sections:
-  - Intro paragraph: "nine principles" → "eleven principles"
-  - Development Workflow & Quality Gates: added Rule 10 and Rule 11 gates
-  - Governance / Compliance review: "Rules 1–9" → "Rules 1–11"
+  - Project Scope: binding dataset source `pandas-dev/pandas`
+      → `scikit-learn/scikit-learn`
 
 Removed sections: None
 
 Templates requiring updates:
-  - .specify/templates/plan-template.md       ✅ aligned (Constitution
-      Check gate now scopes Rules 1–11; populated per-feature)
+  - .specify/templates/plan-template.md       ✅ aligned (no rule change)
   - .specify/templates/spec-template.md       ✅ aligned (no change)
-  - .specify/templates/tasks-template.md      ✅ aligned (/speckit.tasks
-      must now also emit Rule-10- and Rule-11-tagged tasks where relevant)
+  - .specify/templates/tasks-template.md      ✅ aligned (no change)
   - .specify/templates/checklist-template.md  ✅ aligned (no change)
 
-Follow-up TODOs: None. All placeholders resolved.
+Follow-up TODOs: None.
 
 Previous report (kept for history):
+  Version change: 1.0.0 → 1.1.0
+  Bump rationale: MINOR — two new principles added before any code was
+    written, bringing the constitution into full alignment with the Week 7
+    brief's CI scope and chatbot resilience requirements. No existing rule
+    was modified or removed.
+  Modified principles: None (Rules 1–9 unchanged)
+  Added principles:
+    - X.  CI Discipline (Rule 10)
+    - XI. Resilient Tool Use (Rule 11)
+  Modified sections:
+    - Intro paragraph: "nine principles" → "eleven principles"
+    - Development Workflow & Quality Gates: added Rule 10 and Rule 11 gates
+    - Governance / Compliance review: "Rules 1–9" → "Rules 1–11"
+  Removed sections: None
+
   Version change: (none) → 1.0.0
   Bump rationale: Initial ratification of the project constitution.
 -->
@@ -188,7 +194,7 @@ maintainers. It:
 - carries memory across conversations;
 - is embeddable as a React widget in a host app.
 
-The dataset is closed issues from `pandas-dev/pandas`. The LLM provider is the
+The dataset is closed issues from `scikit-learn/scikit-learn`. The LLM provider is the
 Anthropic API. The relational/vector store is Postgres 16 + pgvector; the blob
 store is MinIO; the ephemeral store is Redis 7; secrets come from HashiCorp
 Vault. These technology choices are binding under Rules 2 and 3 and MUST NOT
@@ -229,4 +235,4 @@ compliance with Rules 1–11 before Phase 0 and again after design. Any
 justified deviation MUST be recorded in the plan's Complexity Tracking table;
 unjustified deviations block the work.
 
-**Version**: 1.1.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-18
+**Version**: 1.2.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-19
