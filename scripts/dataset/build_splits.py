@@ -9,7 +9,7 @@ Pipeline (research R4 / FR-016 / contracts C2-C5):
              -> remaining 85% split train/val (~70/15 overall), stratified
                 by class
              -> write {train,val,test}.parquet + splits_report.json under
-                processed/pandas/{run_id}/
+                processed/scikit-learn/{run_id}/
 
 Usage::
 
@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app.infra.minio_client import DATA_BUCKET, ensure_bucket, get_client  # noqa: E402
 
-SOURCE = "pandas-dev/pandas"
+SOURCE = "scikit-learn/scikit-learn"
 LABEL_MAP_PATH = os.path.join(os.path.dirname(__file__), "label_map.yaml")
 TEST_FRACTION = 0.15
 VAL_FRACTION = 0.15
@@ -61,7 +61,7 @@ def _target_class(
 
 def _read_raw(run_id: str) -> list[dict[str, object]]:
     s3 = get_client()
-    prefix = f"raw/pandas/issues/{run_id}/"
+    prefix = f"raw/scikit-learn/issues/{run_id}/"
     listed = s3.list_objects_v2(Bucket=DATA_BUCKET, Prefix=prefix)
     keys = sorted(o["Key"] for o in listed.get("Contents", []) if o["Key"].endswith(".jsonl"))
     if not keys:
@@ -196,13 +196,13 @@ def _put_parquet(
     frame.to_parquet(buf, index=False)
     s3.put_object(  # type: ignore[attr-defined]
         Bucket=DATA_BUCKET,
-        Key=f"processed/pandas/{run_id}/{split}.parquet",
+        Key=f"processed/scikit-learn/{run_id}/{split}.parquet",
         Body=buf.getvalue(),
     )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build pandas issue splits")
+    parser = argparse.ArgumentParser(description="Build scikit-learn issue splits")
     parser.add_argument("--run-id", required=True, help="raw run_id to process")
     args = parser.parse_args()
 
@@ -223,7 +223,7 @@ def main() -> int:
         _put_parquet(s3, args.run_id, split, rows)
     s3.put_object(
         Bucket=DATA_BUCKET,
-        Key=f"processed/pandas/{args.run_id}/splits_report.json",
+        Key=f"processed/scikit-learn/{args.run_id}/splits_report.json",
         Body=json.dumps(report, indent=2).encode("utf-8"),
     )
 
