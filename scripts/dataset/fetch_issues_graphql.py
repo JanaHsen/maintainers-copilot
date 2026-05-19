@@ -1,11 +1,11 @@
-"""Fetch scikit-learn/scikit-learn closed issues via the GitHub GraphQL API.
+"""Fetch pandas-dev/pandas closed issues via the GitHub GraphQL API.
 
 The REST /issues endpoint caps deep pagination at 10k items. GraphQL uses
 cursor pagination with no depth limit, so this script can pull the full
-closed scikit-learn issue corpus in a single run.
+~40k+ closed pandas issues in a single run.
 
 The PAT is read from Vault (Rule 2). Output is JSONL to MinIO under
-raw/scikit-learn/issues/{run_id}/gql_batch_NNNN.jsonl, REST-shaped so
+raw/pandas/issues/{run_id}/gql_batch_NNNN.jsonl, REST-shaped so
 build_splits.py reads it identically to the REST output.
 
 Usage::
@@ -31,8 +31,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from app.infra.minio_client import DATA_BUCKET, ensure_bucket, get_client  # noqa: E402
 from app.infra.vault_client import read_secrets  # noqa: E402
 
-REPO_OWNER = "scikit-learn"
-REPO_NAME = "scikit-learn"
+REPO_OWNER = "pandas-dev"
+REPO_NAME = "pandas"
 GRAPHQL_URL = "https://api.github.com/graphql"
 MAX_BATCHES = int(os.environ.get("MAX_BATCHES", "500"))
 PER_BATCH = 100  # GraphQL hard max
@@ -99,7 +99,7 @@ def main() -> int:
     ensure_bucket(DATA_BUCKET)
     s3 = get_client()
     run_id = os.environ.get("RUN_ID") or _new_run_id()
-    prefix = f"raw/scikit-learn/issues/{run_id}"
+    prefix = f"raw/pandas/issues/{run_id}"
     print(f"run_id={run_id} -> s3://{DATA_BUCKET}/{prefix}/", flush=True)
 
     headers = {
