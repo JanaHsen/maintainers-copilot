@@ -4,7 +4,30 @@ Every materially-architectural choice, one-line-justified and backed by
 numbers where applicable (Rule 6). Counts cite `splits_report.json` /
 `observed_labels.txt` from the canonical dataset run.
 
-## Dataset source: `pandas-dev/pandas` closed issues
+## Dataset switch: `pandas-dev/pandas` → `scikit-learn/scikit-learn`
+
+Constitutional amendment v1.2.0 (Rule-bound Project Scope) changed the
+binding dataset from `pandas-dev/pandas` to `scikit-learn/scikit-learn`,
+before any Day 2 model work began. Rationale: the switch happens while the
+only consumers of the corpus are the offline pipeline scripts (no trained
+classifier, no api dependency yet), so the cost is a re-fetch — there is no
+rework of model or serving code. scikit-learn's issue tracker also carries
+automated CI-failure bot issues; `build_splits.py` now filters those and
+reports full exclusion accounting so the class signal stays trustworthy.
+
+The pandas fetch/processed artifacts already in MinIO under `raw/pandas/`
+and `processed/pandas/` are **retained, not deleted** (Rule 6 audit
+trail); the sections below that describe the pandas run are marked
+**SUPERSEDED** and kept for audit. They will be regenerated against
+scikit-learn and the numbers updated after the operator-gated label-map
+refinement.
+
+## Dataset source: `pandas-dev/pandas` closed issues  — SUPERSEDED (v1.2.0)
+
+> **SUPERSEDED by the scikit-learn switch (constitution v1.2.0).** Kept
+> verbatim for the Rule 6 audit trail; the pandas MinIO objects are
+> retained. The active dataset is now `scikit-learn/scikit-learn` — see
+> the "Dataset switch" section above.
 
 Bound by the project scope; closed issues carry settled, human-applied
 labels — the supervision signal for the 4-class task. Fetched via the
@@ -21,7 +44,12 @@ reached). 16,926 mapped to four classes after dropping PRs and unmappable
 issues; 8,376 dropped (PRs and issues whose labels matched none of the
 four target classes).
 
-## Label mapping (pandas labels → {bug, feature, docs, question})
+## Label mapping (pandas labels → {bug, feature, docs, question})  — SUPERSEDED (v1.2.0)
+
+> **SUPERSEDED.** Describes the pandas label taxonomy/run. `label_map.yaml`
+> has been rewritten for scikit-learn (initial mapping; to be refined after
+> the first scikit-learn `inventory_labels.py` run, operator-gated). Kept
+> for the Rule 6 audit trail.
 
 `scripts/dataset/label_map.yaml` maps pandas's real labels to four classes
 with precedence `[bug, feature, docs, question]` for multi-label issues
@@ -49,7 +77,10 @@ question class. (Subsystem labels like `Arrow` 71, `Strings` 62,
 `Groupby` 51, `Typing` 53, `Indexing` 33 appear frequently but are
 deliberately not mapped — they're orthogonal to the category target.)
 
-## Train / val / test split sizes
+## Train / val / test split sizes  — SUPERSEDED (v1.2.0)
+
+> **SUPERSEDED.** Counts are from the pandas run `20260519T133455Z` and are
+> retained for audit; they will be regenerated for scikit-learn.
 
 Stratified by class, then strict time order: test = most recent ~15%,
 remaining 85% → train/val (~70/15 overall); ties at the boundary go to
@@ -69,7 +100,11 @@ test so `test_min_closed_at > train_val_max_closed_at` (FR-016/SC-006).
   fine-tuning on Day 2 will use class-weighted loss to compensate
   (test count 73 is above the ~30 floor for stable per-class F1).
 
-## Training data integrity hash
+## Training data integrity hash  — hash value SUPERSEDED (v1.2.0)
+
+> **SUPERSEDED hash value.** The mechanism still applies; the specific hash
+> below is for the pandas train split and will change with the scikit-learn
+> regeneration. Retained for audit.
 
 `splits_report.json` includes `training_data_sha256`, a SHA-256 over the
 canonical JSON serialization of the train split (rows sorted by issue
