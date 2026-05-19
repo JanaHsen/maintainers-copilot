@@ -1,6 +1,6 @@
 """Inventory the labels present in a fetched raw issue run.
 
-Reads every ``raw/pandas/issues/{run_id}/page_*.jsonl`` object from MinIO,
+Reads every ``raw/scikit-learn/issues/{run_id}/*.jsonl`` object from MinIO,
 counts unique GitHub label names, and writes
 ``scripts/dataset/observed_labels.txt`` (``<count>\\t<label>`` per line,
 sorted by frequency descending). This grounds label_map.yaml in real data
@@ -28,7 +28,7 @@ OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "observed_labels.txt")
 
 def _iter_issue_lines(run_id: str) -> list[str]:
     s3 = get_client()
-    prefix = f"raw/pandas/issues/{run_id}/"
+    prefix = f"raw/scikit-learn/issues/{run_id}/"
     listed = s3.list_objects_v2(Bucket=DATA_BUCKET, Prefix=prefix)
     keys = sorted(o["Key"] for o in listed.get("Contents", []))
     if not keys:
@@ -43,7 +43,7 @@ def _iter_issue_lines(run_id: str) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Inventory raw pandas issue labels")
+    parser = argparse.ArgumentParser(description="Inventory raw scikit-learn issue labels")
     parser.add_argument("--run-id", required=True, help="raw run_id to inventory")
     args = parser.parse_args()
 
