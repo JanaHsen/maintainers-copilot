@@ -1,15 +1,18 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.1.0 → 1.2.0
-Bump rationale: MINOR — dataset source changed before Day 2 work begins;
-  pandas fetch artifacts in MinIO superseded but retained for audit.
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR — dataset reverted to pandas-dev/pandas after the
+  scikit-learn corpus produced only 4 question-class test samples
+  (16,926 → 4,787 mapped), insufficient for stable per-class F1
+  evaluation. Pandas canonical run_id 20260519T133455Z remains valid in
+  MinIO.
 
 Modified principles: None (Rules 1–11 unchanged)
 
 Modified sections:
-  - Project Scope: binding dataset source `pandas-dev/pandas`
-      → `scikit-learn/scikit-learn`
+  - Project Scope: binding dataset source `scikit-learn/scikit-learn`
+      → `pandas-dev/pandas` (revert)
 
 Removed sections: None
 
@@ -22,6 +25,13 @@ Templates requiring updates:
 Follow-up TODOs: None.
 
 Previous report (kept for history):
+  Version change: 1.1.0 → 1.2.0
+  Bump rationale: MINOR — dataset source changed before Day 2 work begins;
+    pandas fetch artifacts in MinIO superseded but retained for audit.
+  Modified sections:
+    - Project Scope: binding dataset source `pandas-dev/pandas`
+        → `scikit-learn/scikit-learn`
+
   Version change: 1.0.0 → 1.1.0
   Bump rationale: MINOR — two new principles added before any code was
     written, bringing the constitution into full alignment with the Week 7
@@ -194,7 +204,7 @@ maintainers. It:
 - carries memory across conversations;
 - is embeddable as a React widget in a host app.
 
-The dataset is closed issues from `scikit-learn/scikit-learn`. The LLM provider is the
+The dataset is closed issues from `pandas-dev/pandas`. The LLM provider is the
 Anthropic API. The relational/vector store is Postgres 16 + pgvector; the blob
 store is MinIO; the ephemeral store is Redis 7; secrets come from HashiCorp
 Vault. These technology choices are binding under Rules 2 and 3 and MUST NOT
@@ -235,4 +245,4 @@ compliance with Rules 1–11 before Phase 0 and again after design. Any
 justified deviation MUST be recorded in the plan's Complexity Tracking table;
 unjustified deviations block the work.
 
-**Version**: 1.2.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-19
+**Version**: 1.3.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-19
