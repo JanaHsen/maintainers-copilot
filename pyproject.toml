@@ -45,6 +45,7 @@ select = ["E", "F", "I", "B", "UP", "N"]
 python_version = "3.12"
 strict = true
 files = ["app"]
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
