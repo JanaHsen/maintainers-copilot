@@ -17,8 +17,9 @@ Usage::
 """
 
 from __future__ import annotations
-import hashlib
+
 import argparse
+import hashlib
 import io
 import json
 import os
