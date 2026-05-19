@@ -89,17 +89,32 @@ def _map_records(
     issues: list[dict[str, object]],
     precedence: list[str],
     classes: dict[str, set[str]],
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    """Map issues to records and account for everything excluded/ambiguous.
+
+    Precedence-based mapping is kept deliberately (NOT exclude-ambiguous).
+    ``multi_class_via_precedence`` records how many kept rows had labels
+    spanning >=2 classes (the precedence winner was kept) — that count is
+    the signal for whether the precedence choice needs revisiting.
+    """
     records: list[dict[str, object]] = []
     seen: set[int] = set()
+    exclusions = {
+        "pull_requests": 0,
+        "ci_bot_reports": 0,
+        "no_classifying_label": 0,
+        "multi_class_via_precedence": 0,
+    }
     for issue in issues:
         number = issue.get("number")
         if not isinstance(number, int) or number in seen:
             continue
         seen.add(number)
         if issue.get("pull_request") is not None:
+            exclusions["pull_requests"] += 1
             continue  # PRs are not issues for this task
         if _is_ci_bot_report(str(issue.get("title") or "")):
+            exclusions["ci_bot_reports"] += 1
             continue  # automated CI-failure issues are noise, not signal
         if not issue.get("closed_at"):
             continue
@@ -107,20 +122,24 @@ def _map_records(
             label["name"] if isinstance(label, dict) else str(label)
             for label in issue.get("labels", [])
         ]
-        target = _target_class(names, precedence, classes)
-        if target is None:
+        label_set = set(names)
+        matched = [cls for cls in precedence if label_set & classes[cls]]
+        if not matched:
+            exclusions["no_classifying_label"] += 1
             continue  # drop_if_unmapped
+        if len(matched) >= 2:
+            exclusions["multi_class_via_precedence"] += 1
         records.append(
             {
                 "issue_number": issue["number"],
                 "title": issue.get("title") or "",
                 "body": issue.get("body") or "",
                 "labels": names,
-                "target_class": target,
+                "target_class": matched[0],  # precedence winner
                 "closed_at": _parse_dt(str(issue["closed_at"])),
             }
         )
-    return records
+    return records, exclusions
 
 
 def _assign_splits(records: list[dict[str, object]]) -> None:
@@ -170,7 +189,11 @@ def _train_hash(records: list[dict[str, object]]) -> str:
     return h.hexdigest()
 
 
-def _report(records: list[dict[str, object]], run_id: str) -> dict[str, object]:
+def _report(
+    records: list[dict[str, object]],
+    run_id: str,
+    exclusions: dict[str, int],
+) -> dict[str, object]:
     counts: dict[str, dict[str, int]] = {
         s: defaultdict(int) for s in ("train", "val", "test")
     }
@@ -189,6 +212,7 @@ def _report(records: list[dict[str, object]], run_id: str) -> dict[str, object]:
             "train_val_max_closed_at": train_val_max.isoformat(),
             "test_min_closed_at": test_min.isoformat(),
         },
+        "exclusions": exclusions,
         "training_data_sha256": _train_hash(records),
     }
 
@@ -216,9 +240,9 @@ def main() -> int:
 
     precedence, classes, _drop = _load_label_map()
     issues = _read_raw(args.run_id)
-    records = _map_records(issues, precedence, classes)
+    records, exclusions = _map_records(issues, precedence, classes)
     _assign_splits(records)
-    report = _report(records, args.run_id)
+    report = _report(records, args.run_id, exclusions)
 
     ensure_bucket(DATA_BUCKET)
     s3 = get_client()
@@ -240,6 +264,15 @@ def main() -> int:
         c for split in report["counts"].values() for c in split.values()  # type: ignore[union-attr]
     )
     print(f"total_mapped={total} sum_counts={summed} (must match)", flush=True)
+    print("exclusions:", json.dumps(exclusions, indent=2), flush=True)
+    mc = exclusions["multi_class_via_precedence"]
+    if total and mc / total > 0.20:
+        print(
+            f"NOTE: multi_class_via_precedence={mc} is "
+            f"{mc / total:.0%} of total_mapped (>20%) — operator may want to "
+            f"revisit the precedence vs exclude-ambiguous choice.",
+            flush=True,
+        )
     print(json.dumps(report["time_boundary"], indent=2), flush=True)
     return 0
 
