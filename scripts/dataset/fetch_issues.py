@@ -68,6 +68,15 @@ def _get_page(client: httpx.Client, page: int) -> list[dict[str, object]]:
         resp = client.get(API_URL, params=params)
         if _handle_rate_limit(resp):
             continue
+        if resp.status_code == 401:
+            raise SystemExit(
+                "GitHub rejected the PAT (401 Unauthorized). The token read "
+                "from Vault is invalid, expired, or revoked. Generate a new "
+                "token (classic with `public_repo`, or a fine-grained token "
+                "with public-repository read), reseed Vault "
+                "(GITHUB_PAT=... bash scripts/vault_seed.sh), and rerun. The "
+                "token value itself is never logged (Rule 2/7)."
+            )
         resp.raise_for_status()
         data: list[dict[str, object]] = resp.json()
         return data
