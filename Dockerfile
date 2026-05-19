@@ -14,8 +14,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# Application code
+# Application code + Alembic (migrate service runs `alembic upgrade head`)
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 
 # uv creates /app/.venv; put its bins on PATH
 ENV PATH="/app/.venv/bin:$PATH"
