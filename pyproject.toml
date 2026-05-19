@@ -37,6 +37,9 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Colab notebooks have cell-scoped imports (E402 by construction); they are
+# exploratory and not part of the linted/typed surface.
+extend-exclude = ["notebooks", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]

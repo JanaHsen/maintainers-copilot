@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy (app/)
+        run: uv run mypy app
+
+      - name: Secret grep (no hardcoded secrets outside the secrets surface)
+        run: |
+          if grep -rEn 'sk-ant-|password' app/ --include='*.py' \
+               --exclude=vault_client.py --exclude=log_redaction.py ; then
+            echo "::error::secret-shaped literal found in app/ outside the secrets adapter"
+            exit 1
+          fi
+          echo "secret-grep clean"
+
+      - name: Redaction test (Rule 7)
+        run: uv run pytest tests/infra/test_log_redaction.py tests/infra/test_refuse_to_boot.py -q
+
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          sed -i 's/^VAULT_DEV_ROOT_TOKEN_ID=.*/VAULT_DEV_ROOT_TOKEN_ID=ci-root-token/' .env
+
+      - name: Build image
+        run: docker compose build
+
+      - name: Stack up + /health smoke
+        run: |
+          docker compose up -d
+          ok=""
+          for i in $(seq 1 60); do
+            h=$(docker compose ps api --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            s=$(docker compose ps -a api --format '{{.State}}' 2>/dev/null || true)
+            if [ "$s" = "exited" ]; then break; fi
+            sleep 5
+          done
+          docker compose ps -a
+          if [ -z "$ok" ]; then
+            echo "::error::api did not become healthy"
+            docker compose logs api migrate vault-seed
+            docker compose down -v
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
+          echo "GET /health -> $code"
+          [ "$code" = "200" ] || { docker compose logs api; docker compose down -v; exit 1; }
+
+      - name: Stack down
+        if: always()
+        run: docker compose down -v
