@@ -22,6 +22,38 @@ trail); the sections below that describe the pandas run are marked
 scikit-learn and the numbers updated after the operator-gated label-map
 refinement.
 
+## Dataset: `scikit-learn/scikit-learn` — canonical run (ACTIVE)
+
+Canonical run `20260519T153620Z` (GraphQL fetch, `hasNextPage=false` —
+full corpus). Numbers (Rule 6), grounded in `scripts/dataset/observed_labels.txt`:
+
+- **Raw:** 10,581 closed issues, 96 unique labels / 10,994 label
+  occurrences, under `raw/scikit-learn/issues/20260519T153620Z/`.
+- **Label map (operator-approved refinement):**
+  `bug` ← `Bug`(2111), `Regression`(65); `feature` ← `New Feature`(739),
+  `Enhancement`(551), `Performance`(86); `docs` ← `Documentation`(1374);
+  `question` ← `Question`(119). The high-volume workflow labels
+  `Needs Triage`(873) and `help wanted`(694) were deliberately **not**
+  mapped — they are triage state, not a category, and were the dominant
+  source of cross-class ambiguity.
+- **Ambiguity (precedence kept, re-measured):** the initial map gave
+  `multi_class_via_precedence` = 1131 (23% of mapped, over the 20%
+  revisit threshold). The refined map drops it to **150 (3.1%)**, so
+  precedence-based mapping is retained (no switch to exclude-ambiguous).
+- **Splits** (`processed/scikit-learn/20260519T153620Z/splits_report.json`):
+  total_mapped 4787; train 3351 (bug 1440 / feature 929 / docs 893 /
+  question 89), val 718 (bug 309 / feature 199 / docs 191 / question 19),
+  test 718 (bug 341 / feature 205 / docs 168 / question 4). Counts sum to
+  4787. Strict time boundary: `train_val_max=2024-07-18T15:02:36+00:00`
+  < `test_min=2024-07-18T15:02:57+00:00`.
+- **Exclusions:** pull_requests 0 (GraphQL `issues` query excludes PRs by
+  construction), ci_bot_reports 330, no_classifying_label 5464,
+  multi_class_via_precedence 150.
+- `training_data_sha256 = 63c6d1cca1b7eac6…` (scikit-learn train split).
+
+> The `question` class is small (112 total); Day 2 fine-tuning will use
+> class-weighted loss. Trade-off accepted for a semantically clean label.
+
 ## Dataset source: `pandas-dev/pandas` closed issues  — SUPERSEDED (v1.2.0)
 
 > **SUPERSEDED by the scikit-learn switch (constitution v1.2.0).** Kept

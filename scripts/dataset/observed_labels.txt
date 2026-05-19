@@ -1,145 +1,96 @@
-7882	Bug
-2914	Enhancement
-2344	Docs
-1657	Usage Question
-1578	Indexing
-1527	Needs Triage
-1468	Datetime
-1340	Groupby
-1232	API Design
-1228	Reshaping
-1180	Dtype Conversions
-1109	Duplicate Report
-982	Regression
-931	Performance
-897	Closing Candidate
-894	Testing
-860	IO CSV
-788	Missing-data
-734	Needs Tests
-730	MultiIndex
-699	Needs Info
-673	Error Reporting
-622	Numeric Operations
-603	Visualization
-577	IO Data
-576	Build
-576	Categorical
-572	Needs Discussion
-571	CI
-544	Timezones
-530	Compat
-455	IO Excel
-438	Deprecate
-427	ExtensionArray
-419	Output-Formatting
-363	Timedelta
-337	Strings
-308	IO HDF5
-307	Apply
-290	Clean
-289	IO JSON
-281	Algos
-278	Frequency
-276	Arrow
-260	IO SQL
-257	Resample
-253	NA - MaskedArrays
-251	Window
-244	Internals
-240	Index
-219	Period
-211	Dependencies
-200	IO HTML
-194	Sparse
-182	API - Consistency
-177	Constructors
-176	Typing
-163	Code Style
-156	Styler
-152	Interval
-151	IO Parquet
-149	Reduction Operations
-129	Upstream issue
-129	Windows
-126	Refactor
-112	Warnings
-112	Blocker
-111	Unicode
-101	Copy / view semantics
-98	Non-Nano
-90	Release
-83	DataFrame
-82	Unreliable Test
-79	replace
-78	IO Stata
-75	IO LaTeX
-75	Ideas
-65	expressions
-62	Timestamp
-61	Admin
-61	Benchmark
-60	Segfault
-54	Master Tracker
-54	Series
-54	Web
-51	Nested Data
-49	IO Network
-42	IO SAS
-41	32bit
-39	Nuisance Columns
-37	IO Format Request
-33	IO Pickle
-32	datetime.date
-32	metadata
-32	Interchange
-31	Subclassing
-29	Astype
-28	Complex
-27	Transformations
-27	setops
-26	cut
-26	Community
-26	ARM
-26	quantile
-24	PDEP missing values
-24	numba
-23	duplicated
-23	Linux
-21	IO XML
-19	OS X
-19	isin
-16	setitem-with-expansion
-15	Sorting
-15	inplace
-15	IO Fixed Width
-14	hashing
-12	combine/combine_first/update
-11	PDEP6-related
-9	Multithreading
-8	pyarrow dtype retention
-8	ufuncs
-8	Vote
-8	Accessors
-8	rename
-7	Filters
-7	Multi-Block
-6	cov/corr
-5	Describe/info/etc
-5	Localization
-5	Blocker for rc
-5	PyPy
-5	Python 3.11
-4	Conditionals
-4	Python 3.13
-3	Python 3.14
-3	ExtensionArray - New Method Request
-3	Roadmap
-2	Numeric stability
-2	Blocked
-2	Python 3.12
-2	freq retention
-1	Free Threading
-1	AI Slop
-1	Nullable by default
-1	Non-Unique Columns/Rows
+2111	Bug
+1374	Documentation
+1134	Easy
+873	Needs Triage
+739	New Feature
+694	help wanted
+551	Enhancement
+348	good first issue
+330	Build / CI
+200	Moderate
+161	Sprint
+155	API
+152	Blocker
+132	module:linear_model
+119	Question
+104	module:ensemble
+92	module:metrics
+86	Performance
+78	Needs Decision
+77	module:preprocessing
+76	Needs Decision - Close
+74	module:cluster
+72	module:model_selection
+65	Regression
+61	module:tree
+61	module:decomposition
+60	RFC
+56	module:test-suite
+53	Needs Investigation
+43	module:utils
+41	Needs Reproducible Code
+38	cython
+36	Needs Decision - Include Feature
+35	Needs Info
+32	Array API
+32	module:gaussian_process
+30	module:neighbors
+29	module:svm
+29	module:feature_selection
+28	spam
+27	module:feature_extraction
+26	module:datasets
+26	Meta-issue
+26	module:compose
+24	module:manifold
+23	module:neural_network
+17	module:inspection
+17	High Priority
+16	module:pipeline
+16	module:impute
+14	Developer API
+14	module:mixture
+14	Large Scale
+13	Hard
+13	pypy
+11	Needs Benchmarks
+11	Metadata Routing
+11	module:cross_decomposition
+11	module:calibration
+11	module:covariance
+10	Pandas compatibility
+10	module:naive_bayes
+9	frontend
+9	Closing candidate
+9	Numerical Stability
+9	arch:arm
+9	module:multioutput
+9	module:multiclass
+8	free-threading
+7	Callbacks
+7	Low Priority
+7	Packaging
+7	workflow
+7	module:semi_supervised
+6	Validation
+6	segfault
+6	Waiting for Reviewer
+5	float32
+5	OS:Windows
+5	wontfix
+5	module:base
+5	Breaking Change
+4	module:isotonic
+4	Refactor
+4	upstream bug
+3	OS:macOS
+3	module:random_projection
+2	autoclose
+2	module:kernel_approximation
+2	Stalled
+2	Needs work
+2	Move to scikit-learn-extra
+1	wasm
+1	module:discriminant_analysis
+1	good first PR to review
+1	C/C++
