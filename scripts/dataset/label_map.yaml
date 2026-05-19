@@ -1,0 +1,24 @@
+# Maps pandas-dev/pandas GitHub labels to the 4 target classes.
+#
+# precedence: for a multi-label issue, the FIRST class (in this order) whose
+#   label list matches wins — keeps the target single-label (data-model.md).
+# classes: pandas's real, high-frequency label names per class. Verify/extend
+#   from scripts/dataset/observed_labels.txt (inventory_labels.py) and cite the
+#   counts in DECISIONS.md (Rule 6).
+# drop_if_unmapped: issues whose labels match none of the four are EXCLUDED
+#   (never force a class — keeps labels trustworthy for training).
+precedence: [bug, feature, docs, question]
+classes:
+  bug:
+    - "Bug"
+    - "Regression"
+  feature:
+    - "Enhancement"
+    - "Performance"
+    - "API Design"
+  docs:
+    - "Docs"
+  question:
+    - "Usage Question"
+    - "Needs Info"
+drop_if_unmapped: true
