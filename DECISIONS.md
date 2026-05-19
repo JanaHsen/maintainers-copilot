@@ -4,7 +4,39 @@ Every materially-architectural choice, one-line-justified and backed by
 numbers where applicable (Rule 6). Counts cite `splits_report.json` /
 `observed_labels.txt` from the canonical dataset run.
 
-## Dataset switch: `pandas-dev/pandas` → `scikit-learn/scikit-learn`
+## Dataset revert: `scikit-learn/scikit-learn` → `pandas-dev/pandas` (ACTIVE)
+
+Constitutional amendment **v1.3.0** reverts the binding dataset back to
+`pandas-dev/pandas`. The scikit-learn corpus did not yield a usable
+evaluation set for the `question` class:
+
+| Metric | pandas (`20260519T133455Z`) | scikit-learn (`20260519T153620Z`) |
+|---|---|---|
+| total_mapped | **16,926** | 4,787 |
+| `question` **test** samples | **73** | **4** |
+
+Four `question` test samples cannot produce a stable per-class F1 (Rule 5
+evaluation needs a meaningful golden set), so the smaller corpus is
+rejected. The pandas canonical run **`20260519T133455Z`** remains valid in
+MinIO (`raw/pandas/`, `processed/pandas/`) — **no re-fetch**; it is the
+active canonical again, with
+`training_data_sha256 =
+a69163846b9d51502416c574e6ab4d77031ca1ca547d00ed095831d5b3c22294`.
+
+The pandas sections further below (dataset source, label mapping, split
+sizes, training-data hash) are the **active** record again as of v1.3.0;
+their earlier "SUPERSEDED (v1.2.0)" banners are themselves superseded by
+this revert. The scikit-learn sections are now SUPERSEDED but retained for
+audit. Any future revert/re-switch is again a **constitution amendment**
+(Rules 2/3 bind the dataset).
+
+The scikit-learn MinIO objects (`raw/scikit-learn/`,
+`processed/scikit-learn/`) are left in place as historical audit data.
+
+## Dataset switch: `pandas-dev/pandas` → `scikit-learn/scikit-learn`  — SUPERSEDED (v1.3.0 revert)
+
+> **SUPERSEDED by the v1.3.0 revert** (see "Dataset revert" above). Kept
+> for the Rule 6 audit trail.
 
 Constitutional amendment v1.2.0 (Rule-bound Project Scope) changed the
 binding dataset from `pandas-dev/pandas` to `scikit-learn/scikit-learn`,
@@ -22,7 +54,11 @@ trail); the sections below that describe the pandas run are marked
 scikit-learn and the numbers updated after the operator-gated label-map
 refinement.
 
-## Dataset: `scikit-learn/scikit-learn` — canonical run (ACTIVE)
+## Dataset: `scikit-learn/scikit-learn` — canonical run  — SUPERSEDED (v1.3.0 revert)
+
+> **SUPERSEDED by the v1.3.0 revert** (only 4 `question` test samples —
+> see "Dataset revert" above). Kept verbatim for the Rule 6 audit trail;
+> the scikit-learn MinIO objects are retained.
 
 Canonical run `20260519T153620Z` (GraphQL fetch, `hasNextPage=false` —
 full corpus). Numbers (Rule 6), grounded in `scripts/dataset/observed_labels.txt`:
