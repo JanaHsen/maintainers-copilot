@@ -1,10 +1,11 @@
-# Maps pandas-dev/pandas GitHub labels to the 4 target classes.
+# Maps scikit-learn/scikit-learn GitHub labels to the 4 target classes.
 #
 # precedence: for a multi-label issue, the FIRST class (in this order) whose
 #   label list matches wins — keeps the target single-label (data-model.md).
-# classes: pandas's real, high-frequency label names per class. Verify/extend
-#   from scripts/dataset/observed_labels.txt (inventory_labels.py) and cite the
-#   counts in DECISIONS.md (Rule 6).
+# classes: scikit-learn's real label names per class. This is an INITIAL
+#   mapping; it will be refined after the first inventory_labels.py run
+#   against the scikit-learn corpus (operator-gated) and the counts cited
+#   in DECISIONS.md (Rule 6).
 # drop_if_unmapped: issues whose labels match none of the four are EXCLUDED
 #   (never force a class — keeps labels trustworthy for training).
 precedence: [bug, feature, docs, question]
@@ -13,12 +14,11 @@ classes:
     - "Bug"
     - "Regression"
   feature:
+    - "New Feature"
     - "Enhancement"
-    - "Performance"
-    - "API Design"
   docs:
-    - "Docs"
+    - "Documentation"
   question:
-    - "Usage Question"
-    - "Needs Info"
+    - "help wanted"
+    - "Needs Triage"
 drop_if_unmapped: true
