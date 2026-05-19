@@ -10,7 +10,9 @@ fi
 : "${VAULT_DEV_ROOT_TOKEN_ID:?must be set in .env}"
 : "${GITHUB_PAT:?must be set in shell: export GITHUB_PAT=ghp_xxx}"
 
-VAULT_URL="http://localhost:${VAULT_PORT:-8200}"
+# Prefer an explicit VAULT_ADDR (set by the compose vault-seed service to
+# reach the `vault` container); fall back to localhost for host runs.
+VAULT_URL="${VAULT_ADDR:-http://localhost:${VAULT_PORT:-8200}}"
 
 echo "Waiting for Vault..."
 for i in {1..30}; do

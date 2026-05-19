@@ -62,11 +62,32 @@ services:
     ports:
       - "${PHOENIX_PORT:-6006}:6006"
       - "4317:4317"
+    # Phoenix ships a distroless image (no wget/curl/sh) but does include
+    # python, so the liveness probe is a python urllib call.
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6006"]
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6006')"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # One-shot: seed Vault kv-v2 before migrate/api boot so a clean
+  # `docker-compose up` reaches a healthy /health with no manual step
+  # (Rule 8). Reuses the same idempotent scripts/vault_seed.sh operators run.
+  vault-seed:
+    build: .
+    image: mcp-api:latest
+    command: ["bash", "/seed/vault_seed.sh"]
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      GITHUB_PAT: ${GITHUB_PAT:-placeholder_until_day2}
+    volumes:
+      - ./scripts:/seed:ro
+    restart: "no"
+    depends_on:
+      vault:
+        condition: service_healthy
 
   migrate:
     build: .
@@ -82,6 +103,8 @@ services:
         condition: service_healthy
       vault:
         condition: service_healthy
+      vault-seed:
+        condition: service_completed_successfully
 
   api:
     build: .
@@ -94,6 +117,8 @@ services:
       - "${API_PORT:-8000}:8000"
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      vault-seed:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
