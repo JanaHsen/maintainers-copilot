@@ -26,3 +26,41 @@ mapping leftovers to `question` as a catch-all).
 > will be updated with the exact counts and any label-list adjustments once
 > that run completes (it was blocked on operator GitHub-PAT provisioning, not
 > on code).
+
+## Dataset source: `pandas-dev/pandas` closed issues
+
+Bound by the project scope; closed issues carry settled, human-applied
+labels — the supervision signal for the 4-class task. Fetched via GitHub
+REST (simpler/auditable pagination + rate limits than GraphQL), PAT read
+from Vault, never `.env` (Rule 2). See `research.md` R2.
+
+## Train / val / test split sizes
+
+Stratified by class, then strict time order: test = most recent ~15%,
+remaining 85% → train/val (~70/15 overall); ties at the boundary go to
+test so `test_min_closed_at > train_val_max_closed_at` (FR-016/SC-006).
+
+> **Pending numbers (Rule 6):** exact per-split per-class counts come from
+> `processed/pandas/{run_id}/splits_report.json` and will be quoted here
+> after the first live `build_splits.py` run (blocked on the dataset fetch,
+> not on code). Split logic is verified against synthetic data (contracts
+> C2–C5: only the four classes, counts sum to `total_mapped`, strict time
+> boundary).
+
+## Tracing backend: Phoenix (Arize)
+
+Local OpenTelemetry → OTLP → Phoenix container: no external account/secret
+(keeps the Rule 2 surface minimal), ships a usable trace UI, natively
+models LLM spans for Days 3–4 without a backend swap. Wired from the first
+commit so it is never retrofitted (Rule 7). Alternatives (Jaeger, Tempo,
+hosted) rejected — see `research.md` R1.
+
+## Rule 5 / Rule 10 scoped deferral (Day 1)
+
+Golden sets and the trained classifier do not exist until Days 2–3, so
+enforced eval gates would be a perpetually-red CI. Day 1 ships
+correctly-shaped eval stubs + `eval_thresholds.yaml` with placeholder
+values **not enforced**, and a CI that enforces what is enforceable now
+(ruff, mypy, secret-grep, redaction test, image build, `/health` smoke).
+This is a documented scoped deferral, not an unjustified violation (plan
+Complexity Tracking).
