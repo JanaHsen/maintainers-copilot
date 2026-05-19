@@ -1,0 +1,15 @@
+# Eval thresholds. PLACEHOLDER values, NOT enforced on Day 1 (Rule 5/10
+# scoped deferral — golden sets + trained classifier do not exist until
+# Days 2-3; see DECISIONS.md). Days 2-3 set real values and flip `enforced`.
+enforced: false
+
+classification:
+  # Day 2 fills these from the trained DistilBERT on the test split.
+  min_accuracy: 0.0
+  min_macro_f1: 0.0
+
+rag:
+  # Day 3 fills these from the RAG golden set.
+  min_answer_relevance: 0.0
+  min_context_precision: 0.0
+  max_p95_latency_ms: 0
