@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.infra.request_context import RequestContextMiddleware
 from app.infra.tracing import setup_tracing, shutdown_tracing
 
 
@@ -22,3 +23,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Maintainer's Copilot", lifespan=lifespan)
+app.add_middleware(RequestContextMiddleware)
