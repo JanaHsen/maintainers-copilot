@@ -1,4 +1,4 @@
-"""Fetch scikit-learn/scikit-learn closed issues into MinIO as verbatim JSONL.
+"""Fetch pandas-dev/pandas closed issues into MinIO as verbatim JSONL.
 
 Offline pipeline (not part of the api). The GitHub PAT is read from Vault,
 never from env (Rule 2). Pages are fetched sequentially with rate-limit
@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from app.infra.minio_client import DATA_BUCKET, ensure_bucket, get_client  # noqa: E402
 from app.infra.vault_client import read_secrets  # noqa: E402
 
-REPO = "scikit-learn/scikit-learn"
+REPO = "pandas-dev/pandas"
 API_URL = f"https://api.github.com/repos/{REPO}/issues"
 MAX_PAGES = int(os.environ.get("MAX_PAGES", "25"))
 PER_PAGE = int(os.environ.get("PER_PAGE", "100"))
@@ -88,7 +88,7 @@ def main() -> int:
     ensure_bucket(DATA_BUCKET)
     s3 = get_client()
     run_id = os.environ.get("RUN_ID") or _new_run_id()
-    prefix = f"raw/scikit-learn/issues/{run_id}"
+    prefix = f"raw/pandas/issues/{run_id}"
     print(f"run_id={run_id} -> s3://{DATA_BUCKET}/{prefix}/", flush=True)
 
     headers = {
