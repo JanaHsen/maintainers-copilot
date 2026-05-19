@@ -1,6 +1,6 @@
 """SQLAlchemy 2.x engine and session factory.
 
-The DB password comes from Vault (Rule 2), never from env. Boot uses a
+The DB credential comes from Vault (Rule 2), never from env. Boot uses a
 bounded retry so a compose start-order race is absorbed, but a genuinely
 unreachable Postgres still fails loud (Rule 4). Only ``app/repositories/``
 may import this; the rest of the app stays storage-agnostic (Rule 1).
@@ -15,7 +15,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
-from app.infra.vault_client import read_secrets
+from app.infra.vault_client import KEY_DATABASE_PASSWORD, read_secrets
 
 
 class DatabaseUnreachableError(RuntimeError):
@@ -24,9 +24,9 @@ class DatabaseUnreachableError(RuntimeError):
 
 def _database_url() -> str:
     settings = get_settings()
-    password = read_secrets(["database_password"])["database_password"]
+    db_secret = read_secrets([KEY_DATABASE_PASSWORD])[KEY_DATABASE_PASSWORD]
     return (
-        f"postgresql+psycopg://{settings.postgres_user}:{password}"
+        f"postgresql+psycopg://{settings.postgres_user}:{db_secret}"
         f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
     )
 

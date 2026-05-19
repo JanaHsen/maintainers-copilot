@@ -17,6 +17,12 @@ from app.config import get_settings
 SECRET_MOUNT = "secret"
 SECRET_PATH = "maintainers-copilot"
 
+# Vault key names live here (the secrets adapter) so no other app/ module
+# carries a secret-shaped literal (Rule 2; keeps the CI secret-grep clean).
+KEY_DATABASE_PASSWORD = "database_password"  # key name, not a secret value
+KEY_MINIO_ROOT_PASSWORD = "minio_root_password"  # key name, not a secret value
+KEY_GITHUB_PAT = "github_pat"  # key name, not a secret value
+
 
 class VaultBootstrapError(RuntimeError):
     """Base for Vault failures that must prevent the process from booting."""

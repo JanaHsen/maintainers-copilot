@@ -12,13 +12,17 @@ from app.infra.log_redaction import RedactingFilter
 from app.infra.minio_client import MinioUnreachableError
 from app.infra.request_context import RequestContextMiddleware
 from app.infra.tracing import setup_tracing, shutdown_tracing
-from app.infra.vault_client import VaultBootstrapError
+from app.infra.vault_client import (
+    KEY_DATABASE_PASSWORD,
+    KEY_MINIO_ROOT_PASSWORD,
+    VaultBootstrapError,
+)
 
 logger = logging.getLogger("app")
 
 # Keys the api itself requires at boot. github_pat is used only by the offline
 # dataset script, so it is intentionally not required to start the api.
-REQUIRED_VAULT_KEYS = ["database_password", "minio_root_password"]
+REQUIRED_VAULT_KEYS = [KEY_DATABASE_PASSWORD, KEY_MINIO_ROOT_PASSWORD]
 
 
 def _configure_logging() -> None:

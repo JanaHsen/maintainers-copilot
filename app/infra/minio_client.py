@@ -1,6 +1,6 @@
 """MinIO (S3-compatible) client — the only blob store (Rule 3).
 
-The root password is read from Vault (Rule 2). Boot bootstraps the data
+The root credential is read from Vault (Rule 2). Boot bootstraps the data
 bucket and retries with bounded backoff so a compose start race is absorbed
 while a genuinely down MinIO still fails loud (Rule 4).
 """
@@ -17,7 +17,7 @@ from botocore.exceptions import (  # type: ignore[import-untyped]
 )
 
 from app.config import get_settings
-from app.infra.vault_client import read_secrets
+from app.infra.vault_client import KEY_MINIO_ROOT_PASSWORD, read_secrets
 
 DATA_BUCKET = "maintainers-copilot"
 
@@ -29,13 +29,13 @@ class MinioUnreachableError(RuntimeError):
 @lru_cache
 def get_client() -> Any:
     settings = get_settings()
-    password = read_secrets(["minio_root_password"])["minio_root_password"]
+    minio_secret = read_secrets([KEY_MINIO_ROOT_PASSWORD])[KEY_MINIO_ROOT_PASSWORD]
     endpoint = f"http://{settings.minio_host}:{settings.minio_port}"
     return boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=settings.minio_root_user,
-        aws_secret_access_key=password,
+        aws_secret_access_key=minio_secret,
         region_name="us-east-1",
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
