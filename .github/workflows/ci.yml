@@ -16,6 +16,11 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          sed -i 's/^VAULT_DEV_ROOT_TOKEN_ID=.*/VAULT_DEV_ROOT_TOKEN_ID=ci-root-token/' .env
+
       - name: Ruff
         run: uv run ruff check .
 
@@ -33,11 +38,6 @@ jobs:
 
       - name: Redaction test (Rule 7)
         run: uv run pytest tests/infra/test_log_redaction.py tests/infra/test_refuse_to_boot.py -q
-
-      - name: Prepare .env
-        run: |
-          cp .env.example .env
-          sed -i 's/^VAULT_DEV_ROOT_TOKEN_ID=.*/VAULT_DEV_ROOT_TOKEN_ID=ci-root-token/' .env
 
       - name: Build image
         run: docker compose build
