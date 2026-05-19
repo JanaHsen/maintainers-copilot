@@ -64,3 +64,12 @@ values **not enforced**, and a CI that enforces what is enforceable now
 (ruff, mypy, secret-grep, redaction test, image build, `/health` smoke).
 This is a documented scoped deferral, not an unjustified violation (plan
 Complexity Tracking).
+
+## CI: first green run on `foundations`
+
+`.github/workflows/ci.yml` is green on the `foundations` branch — ruff,
+mypy `app/`, secret-grep, redaction + refuse-to-boot tests, image build,
+and the compose `/health` smoke all pass:
+
+- Run: https://github.com/JanaHsen/maintainers-copilot/actions/runs/26089474565
+  (`conclusion=success`).
