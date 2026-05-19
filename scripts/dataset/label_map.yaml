@@ -1,13 +1,9 @@
-# Maps scikit-learn/scikit-learn GitHub labels to the 4 target classes.
+# Maps pandas-dev/pandas GitHub labels to the 4 target classes.
 #
 # precedence: for a multi-label issue, the FIRST class (in this order) whose
 #   label list matches wins — keeps the target single-label (data-model.md).
-# classes: scikit-learn's real label names per class. This is an INITIAL
-#   mapping, REFINED against observed_labels.txt (run 20260519T153620Z,
-#   10,581 issues / 96 labels) and operator-approved. `question` is the
-#   semantic `Question` label only — the workflow labels `help wanted` /
-#   `Needs Triage` were the main driver of multi-class ambiguity and are
-#   intentionally not class targets. Counts cited in DECISIONS.md (Rule 6).
+# classes: pandas's real, high-frequency label names per class. Grounded in
+#   the canonical pandas run 20260519T133455Z (see DECISIONS.md, Rule 6).
 # drop_if_unmapped: issues whose labels match none of the four are EXCLUDED
 #   (never force a class — keeps labels trustworthy for training).
 precedence: [bug, feature, docs, question]
@@ -16,11 +12,12 @@ classes:
     - "Bug"
     - "Regression"
   feature:
-    - "New Feature"
     - "Enhancement"
     - "Performance"
+    - "API Design"
   docs:
-    - "Documentation"
+    - "Docs"
   question:
-    - "Question"
+    - "Usage Question"
+    - "Needs Info"
 drop_if_unmapped: true
