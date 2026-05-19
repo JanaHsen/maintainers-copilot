@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routers import api_router
 from app.infra import database, minio_client, redis_client, vault_client
 from app.infra.database import DatabaseUnreachableError
 from app.infra.log_redaction import RedactingFilter
@@ -73,3 +74,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Maintainer's Copilot", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware)
+app.include_router(api_router)
