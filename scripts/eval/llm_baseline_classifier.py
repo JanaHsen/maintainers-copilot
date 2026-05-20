@@ -5,12 +5,14 @@ classifies each row with Claude Haiku using the committed system/user
 prompt at ``prompts/llm_baseline_classifier.md``, and writes a single
 JSON report to ``artifacts/llm_baseline/{run_id}/report.json``.
 
-The report captures accuracy, macro-F1, per-class F1, latency p50/p95,
-and total + per-1k cost so the slice-(h) DECISIONS.md table can compare
-DistilBERT and Haiku apples-to-apples. The script runs the test set
-through with bounded concurrency (4 workers by default) so a real run
-on ~2.5k examples finishes in roughly 10 minutes and stays well under
-Anthropic's rate limits.
+The script runs the test set **sequentially** at a steady 46 requests
+per minute (``1.3s`` between calls), which sits safely under the
+Anthropic tier-1 50/min cap. A full ~2.5k-example test split therefore
+takes roughly 55 minutes. Retries are a safety net only: a 429
+triggers a 65-second wait (one full minute window plus a small buffer)
+before retrying, with a maximum of three retries per request; any
+other error logs the row's ``issue_number`` and continues so a single
+bad row doesn't kill a 50-minute run.
 
 Run (after `vault_seed.sh` has stored a real `anthropic_api_key`):
 
@@ -28,7 +30,6 @@ Override price-per-token defaults if Anthropic pricing has shifted:
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import io
 import json
 import logging
@@ -56,6 +57,14 @@ logger = logging.getLogger("llm_baseline")
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "llm_baseline_classifier.md"
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 CLASSES = ("bug", "docs", "feature", "question")
+
+# 1.3s between requests => 46/min, under the tier-1 50/min cap.
+PACING_SECONDS = 1.3
+# 65s = a full per-minute rate-limit window plus a 5s buffer.
+RATE_LIMIT_BACKOFF_SECONDS = 65.0
+# Three retries per request; non-429 errors are logged and skipped without retry.
+MAX_RETRIES = 3
+PROGRESS_EVERY = 50
 
 
 @dataclass
@@ -112,13 +121,16 @@ class Report:
     model: str
     prompt_path: str
     test_n: int
+    succeeded_n: int
+    failed_n: int
     evaluated_n: int
     unparseable_n: int
+    errors: list[int]
     metrics: dict[str, Any]
     latency_ms: dict[str, float]
     cost_usd: dict[str, float]
     tokens: dict[str, int]
-    concurrency: int
+    pacing_seconds: float
     price_config: dict[str, float]
     started_at: str
     finished_at: str
@@ -127,6 +139,11 @@ class Report:
 
 def _utc_now_compact() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _fmt_mmss(seconds: float) -> str:
+    total = max(0, int(seconds))
+    return f"{total // 60}m {total % 60}s"
 
 
 def _read_test_split(dataset_run_id: str) -> pd.DataFrame:
@@ -194,6 +211,69 @@ def classify_one(
         cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
         cache_creation_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
     )
+
+
+def classify_with_retry(
+    client: anthropic.Anthropic,
+    *,
+    system_prompt: str,
+    user_template: str,
+    title: str,
+    body: str,
+    issue_number: int,
+    true_label: str,
+    model: str,
+    max_retries: int = MAX_RETRIES,
+    rate_limit_backoff_s: float = RATE_LIMIT_BACKOFF_SECONDS,
+    sleep: Any = time.sleep,
+) -> Prediction | None:
+    """Classify with a 429-specific safety net; return None on permanent failure.
+
+    Only :class:`anthropic.RateLimitError` is retried (sleep
+    ``rate_limit_backoff_s`` between attempts, up to ``max_retries``
+    retries). Any other error logs the issue_number and returns None
+    so the run continues — a 50-minute benchmark must not die on a
+    single bad row.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return classify_one(
+                client,
+                system_prompt=system_prompt,
+                user_template=user_template,
+                title=title,
+                body=body,
+                issue_number=issue_number,
+                true_label=true_label,
+                model=model,
+            )
+        except anthropic.RateLimitError as exc:
+            if attempt < max_retries:
+                logger.warning(
+                    "rate limited on issue %d (attempt %d/%d); sleeping %.0fs",
+                    issue_number,
+                    attempt + 1,
+                    max_retries + 1,
+                    rate_limit_backoff_s,
+                )
+                sleep(rate_limit_backoff_s)
+                continue
+            logger.error(
+                "issue %d: rate-limit retries exhausted (%d attempts): %s",
+                issue_number,
+                max_retries + 1,
+                exc,
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 — log issue_number and continue (Rule 11 spirit)
+            logger.error(
+                "issue %d: non-retryable error %s: %s",
+                issue_number,
+                type(exc).__name__,
+                exc,
+            )
+            return None
+    return None  # unreachable; satisfies the type checker
 
 
 def _accuracy(preds: Iterable[Prediction]) -> float:
@@ -282,7 +362,8 @@ def build_report(
     model: str,
     preds: list[Prediction],
     test_n: int,
-    concurrency: int,
+    failed_issue_numbers: list[int],
+    pacing_seconds: float,
     price: PriceConfig,
     started_at: str,
     finished_at: str,
@@ -297,8 +378,11 @@ def build_report(
         model=model,
         prompt_path=str(PROMPT_PATH.relative_to(PROMPT_PATH.parents[1])),
         test_n=test_n,
+        succeeded_n=len(preds),
+        failed_n=len(failed_issue_numbers),
         evaluated_n=evaluated_n,
         unparseable_n=unparseable_n,
+        errors=list(failed_issue_numbers),
         metrics=compute_metrics(preds),
         latency_ms=compute_latency(preds),
         cost_usd={
@@ -315,7 +399,7 @@ def build_report(
             "cache_read_total": tokens.cache_read_total,
             "cache_creation_total": tokens.cache_creation_total,
         },
-        concurrency=concurrency,
+        pacing_seconds=pacing_seconds,
         price_config={
             "input_per_million_usd": price.input_per_million,
             "output_per_million_usd": price.output_per_million,
@@ -348,7 +432,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--dataset-run-id", required=True)
     p.add_argument("--run-id", default=None, help="defaults to a UTC timestamp")
     p.add_argument("--model", default=DEFAULT_MODEL)
-    p.add_argument("--concurrency", type=int, default=4)
     p.add_argument(
         "--max-rows",
         type=int,
@@ -379,9 +462,9 @@ def main(argv: list[str] | None = None) -> int:
         df = df.head(args.max_rows)
     test_n = len(df)
     logger.info(
-        "classifying %d examples (concurrency=%d, model=%s)",
+        "classifying %d examples sequentially (pacing=%.1fs, model=%s)",
         test_n,
-        args.concurrency,
+        PACING_SECONDS,
         args.model,
     )
 
@@ -389,34 +472,58 @@ def main(argv: list[str] | None = None) -> int:
     client = _make_anthropic_client()
 
     preds: list[Prediction] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [
-            pool.submit(
-                classify_one,
-                client,
-                system_prompt=system_prompt,
-                user_template=user_template,
-                title=str(row.title or ""),
-                body=str(row.body or ""),
-                issue_number=int(row.issue_number),
-                true_label=str(row.target_class),
-                model=args.model,
+    failed_issue_numbers: list[int] = []
+    start_time = time.perf_counter()
+    rows = list(df.itertuples(index=False))
+
+    for i, row in enumerate(rows, start=1):
+        issue_number = int(row.issue_number)
+        result = classify_with_retry(
+            client,
+            system_prompt=system_prompt,
+            user_template=user_template,
+            title=str(row.title or ""),
+            body=str(row.body or ""),
+            issue_number=issue_number,
+            true_label=str(row.target_class),
+            model=args.model,
+        )
+        if result is not None:
+            preds.append(result)
+        else:
+            failed_issue_numbers.append(issue_number)
+
+        if i % PROGRESS_EVERY == 0 or i == test_n:
+            elapsed = time.perf_counter() - start_time
+            eta = (elapsed / i) * (test_n - i) if i < test_n else 0.0
+            running_cost = compute_cost(preds, price)[0].total
+            logger.info(
+                "processed %d/%d, elapsed %s, ETA %s, cost so far $%.2f",
+                i,
+                test_n,
+                _fmt_mmss(elapsed),
+                _fmt_mmss(eta),
+                running_cost,
             )
-            for row in df.itertuples(index=False)
-        ]
-        for i, fut in enumerate(concurrent.futures.as_completed(futures), start=1):
-            preds.append(fut.result())
-            if i % 100 == 0:
-                logger.info("progress: %d / %d", i, test_n)
+
+        if i < test_n:
+            time.sleep(PACING_SECONDS)
 
     finished_at = _utc_now_compact()
+    logger.info(
+        "complete: succeeded=%d failed=%d (errors: %s)",
+        len(preds),
+        len(failed_issue_numbers),
+        failed_issue_numbers if failed_issue_numbers else "none",
+    )
     report = build_report(
         run_id=run_id,
         dataset_run_id=args.dataset_run_id,
         model=args.model,
         preds=preds,
         test_n=test_n,
-        concurrency=args.concurrency,
+        failed_issue_numbers=failed_issue_numbers,
+        pacing_seconds=PACING_SECONDS,
         price=price,
         started_at=started_at,
         finished_at=finished_at,
