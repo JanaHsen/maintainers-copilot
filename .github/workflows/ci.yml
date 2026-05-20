@@ -24,20 +24,25 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
-      - name: Mypy (app/)
-        run: uv run mypy app
+      - name: Mypy (app/ + model_server/)
+        run: uv run mypy
 
       - name: Secret grep (no hardcoded secrets outside the secrets surface)
         run: |
-          if grep -rEn 'sk-ant-|password' app/ --include='*.py' \
+          if grep -rEn 'sk-ant-|password' app/ model_server/ --include='*.py' \
                --exclude=vault_client.py --exclude=log_redaction.py ; then
-            echo "::error::secret-shaped literal found in app/ outside the secrets adapter"
+            echo "::error::secret-shaped literal found in app/ or model_server/ outside the secrets adapter"
             exit 1
           fi
           echo "secret-grep clean"
 
-      - name: Redaction test (Rule 7)
-        run: uv run pytest tests/infra/test_log_redaction.py tests/infra/test_refuse_to_boot.py -q
+      - name: Tests (redaction Rule 7, refuse-to-boot Rule 4)
+        run: |
+          uv run pytest \
+            tests/infra/test_log_redaction.py \
+            tests/infra/test_refuse_to_boot.py \
+            tests/model_server/test_boot_check.py \
+            -q
 
       - name: Build image
         run: docker compose build

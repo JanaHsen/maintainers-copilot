@@ -32,6 +32,18 @@ dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
   "types-pyyaml",
+  "pandas-stubs",
+]
+# The model server image installs the `ml` group on top of base deps.
+# transformers is pinned to 4.57.6 to match the Colab training environment
+# (transformers 5.x has a LayerNorm key regression that breaks state_dict
+# loads from the published run). torch 2.8+ matches Colab 2.8.0+cu128; CPU
+# inference is used on the backend.
+ml = [
+  "torch>=2.8,<3",
+  "transformers==4.57.6",
+  "tokenizers>=0.20",
+  "safetensors>=0.4",
 ]
 
 [tool.ruff]
@@ -47,7 +59,7 @@ select = ["E", "F", "I", "B", "UP", "N"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app"]
+files = ["app", "model_server"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
