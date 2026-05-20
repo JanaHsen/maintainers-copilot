@@ -32,6 +32,7 @@ import concurrent.futures
 import io
 import json
 import logging
+import os
 import sys
 import time
 from collections.abc import Iterable
@@ -43,9 +44,12 @@ from typing import Any
 import anthropic
 import pandas as pd
 
-from app.infra.minio_client import DATA_BUCKET, get_client
-from app.infra.vault_client import KEY_ANTHROPIC_API_KEY, read_secrets
-from model_server.prompts import load_system_user, render
+# The script lives outside the app package; make repo root importable.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from app.infra.minio_client import DATA_BUCKET, get_client  # noqa: E402
+from app.infra.vault_client import KEY_ANTHROPIC_API_KEY, read_secrets  # noqa: E402
+from model_server.prompts import load_system_user, render  # noqa: E402
 
 logger = logging.getLogger("llm_baseline")
 
