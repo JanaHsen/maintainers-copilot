@@ -29,11 +29,11 @@ import io
 from dataclasses import dataclass
 
 import torch
-from transformers import (  # type: ignore[import-untyped]
+from transformers import (
     AutoTokenizer,
     DistilBertForSequenceClassification,
 )
-from transformers.tokenization_utils_base import (  # type: ignore[import-untyped]
+from transformers.tokenization_utils_base import (
     PreTrainedTokenizerBase,
 )
 
@@ -62,7 +62,10 @@ class Prediction:
 
 
 def load_model(verified: VerifiedArtifacts) -> LoadedModel:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    # AutoTokenizer.from_pretrained is typed as untyped in the transformers
+    # stubs; DistilBertForSequenceClassification.from_pretrained is typed,
+    # so the ignore is needed only on the tokenizer call.
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)  # type: ignore[no-untyped-call]
     model = DistilBertForSequenceClassification.from_pretrained(
         MODEL_NAME,
         num_labels=len(verified.label2id),

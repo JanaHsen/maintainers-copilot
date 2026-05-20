@@ -69,7 +69,7 @@ def _parse_classification_response(payload: dict[str, object]) -> Classification
         raw_scores = payload["label_scores"]
         if not isinstance(raw_scores, dict):
             raise ValueError("label_scores is not an object")
-        label_scores = {str(k): float(v) for k, v in raw_scores.items()}  # type: ignore[arg-type]
+        label_scores = {str(k): float(v) for k, v in raw_scores.items()}
     except (KeyError, TypeError, ValueError) as exc:
         raise ModelServerError(f"unexpected /classify response shape: {exc}") from exc
     return ClassificationResponse(
