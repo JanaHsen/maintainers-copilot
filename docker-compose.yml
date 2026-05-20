@@ -43,7 +43,11 @@ services:
       retries: 10
 
   vault:
-    image: hashicorp/vault:latest
+    # Pinned: `hashicorp/vault:latest` was re-tagged between Day 1's last
+    # green CI run and Day 2's first push, and the new image's entrypoint
+    # exits 126 in the GitHub Actions runner. 1.18 is the last known-good
+    # tag for our compose stanza.
+    image: hashicorp/vault:1.18
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
