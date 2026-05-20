@@ -1,22 +1,34 @@
-"""Placeholder /ner endpoint — code-shape entity extraction lands in slice (e)."""
+"""POST /ner — deterministic regex extraction of code-shaped entities."""
 
-from fastapi import APIRouter, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from __future__ import annotations
+
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from model_server import ner as ner_module
 
 router = APIRouter()
 
 
 class NerRequest(BaseModel):
+    text: str = Field(default="")
+
+
+class NerEntity(BaseModel):
     text: str
+    type: str
+    start: int
+    end: int
 
 
-@router.post("/ner")
-def ner(_req: NerRequest) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={
-            "detail": "ner endpoint not yet implemented",
-            "slice": "e",
-        },
-    )
+class NerResponse(BaseModel):
+    entities: list[NerEntity]
+
+
+@router.post("/ner", response_model=NerResponse)
+def ner(req: NerRequest) -> NerResponse:
+    entities = [
+        NerEntity(text=e.text, type=e.type, start=e.start, end=e.end)
+        for e in ner_module.extract(req.text)
+    ]
+    return NerResponse(entities=entities)

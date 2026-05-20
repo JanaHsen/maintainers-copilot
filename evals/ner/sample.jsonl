@@ -1,0 +1,20 @@
+{"id": "01", "text": "BUG: DataFrame.groupby() raises KeyError when a MultiIndex column is missing.", "expected": [{"text": "DataFrame.groupby", "type": "function_call"}, {"text": "KeyError", "type": "exception_class"}]}
+{"id": "02", "text": "Calling pd.read_csv(file, chunksize=1000) returns a TextFileReader that doesn't expose .shape.", "expected": [{"text": "pd.read_csv", "type": "function_call"}]}
+{"id": "03", "text": "df.merge(other, how='outer') fails with ValueError: keys not in left frame on pandas 2.1.0.", "expected": [{"text": "df.merge", "type": "function_call"}, {"text": "ValueError", "type": "exception_class"}]}
+{"id": "04", "text": "Documentation for pandas.api.types.is_numeric_dtype is missing the value_counts() example.", "expected": [{"text": "pandas.api.types.is_numeric_dtype", "type": "module_path"}, {"text": "value_counts", "type": "function_call"}]}
+{"id": "05", "text": "When df.loc[idx, col] is called, the result should be a Series but is sometimes a DataFrame.", "expected": [{"text": "df.loc", "type": "module_path"}]}
+{"id": "06", "text": "ENH: add Series.between_time() support for timezone-aware datetime indices.", "expected": [{"text": "Series.between_time", "type": "function_call"}]}
+{"id": "07", "text": "Why does numpy.ndarray.flatten() work but pandas.Series.flatten() raise AttributeError?", "expected": [{"text": "numpy.ndarray.flatten", "type": "function_call"}, {"text": "pandas.Series.flatten", "type": "function_call"}, {"text": "AttributeError", "type": "exception_class"}]}
+{"id": "08", "text": "Tests in tests/series/test_constructors.py fail randomly with AssertionError on 2.2.x.", "expected": [{"text": "AssertionError", "type": "exception_class"}]}
+{"id": "09", "text": "Setting pandas.options.mode.chained_assignment to 'warn' should not affect .loc[...] assignments.", "expected": [{"text": "pandas.options.mode.chained_assignment", "type": "module_path"}]}
+{"id": "10", "text": "pd.concat() with ignore_index=True produces unexpected MultiIndex in pandas 2.0.", "expected": [{"text": "pd.concat", "type": "function_call"}]}
+{"id": "11", "text": "Regression: DataFrame.to_csv(buf) no longer accepts buf as io.BytesIO under pandas 2.0.", "expected": [{"text": "DataFrame.to_csv", "type": "function_call"}]}
+{"id": "12", "text": "Series.str.contains(pat, regex=True) raises re.error on bad patterns instead of returning NaN.", "expected": [{"text": "Series.str.contains", "type": "function_call"}, {"text": "re.error", "type": "module_path"}]}
+{"id": "13", "text": "Why does len(df.columns) differ from df.shape[1] after a reindex?", "expected": [{"text": "len", "type": "function_call"}, {"text": "df.columns", "type": "module_path"}, {"text": "df.shape", "type": "module_path"}]}
+{"id": "14", "text": "BUG: groupby().agg() chained call returns wrong dtype for Int64 columns.", "expected": [{"text": "groupby", "type": "function_call"}, {"text": "agg", "type": "function_call"}]}
+{"id": "15", "text": "Doc: pandas.DataFrame.merge does not mention the validate parameter, i.e. strict validation modes.", "expected": []}
+{"id": "16", "text": "When using pd.merge(left, right, on='id'), NaN values in 'id' produce MergeError.", "expected": [{"text": "pd.merge", "type": "function_call"}, {"text": "MergeError", "type": "exception_class"}]}
+{"id": "17", "text": "Question: how do I install pandas extras, e.g. pandas[parquet], via pip?", "expected": []}
+{"id": "18", "text": "BUG: DataFrame.reset_index(drop=True) then .set_index('id') does not reset the RangeIndex.", "expected": [{"text": "DataFrame.reset_index", "type": "function_call"}, {"text": "set_index", "type": "function_call"}]}
+{"id": "19", "text": "I get UserWarning: Boolean Series key will be reindexed when using df[df['col'] > 0].", "expected": [{"text": "UserWarning", "type": "exception_class"}]}
+{"id": "20", "text": "ENH: support numpy.float128 dtype in DataFrame.astype() for high-precision data.", "expected": [{"text": "numpy.float128", "type": "module_path"}, {"text": "DataFrame.astype", "type": "function_call"}]}

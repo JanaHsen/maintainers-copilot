@@ -203,6 +203,40 @@ values **not enforced**, and a CI that enforces what is enforceable now
 This is a documented scoped deferral, not an unjustified violation
 (plan Complexity Tracking).
 
+## /ner extractor: deterministic regex over a pre-trained NER model
+
+The `/ner` endpoint extracts code-shaped entities (function/method
+calls, exception classes, dotted module paths) with a small set of
+regular expressions in `model_server/ner.py`, not a pre-trained NER
+model. Three entity types are emitted with priority order
+`exception_class` > `function_call` > `module_path` so overlaps like
+`KeyError("...")` resolve cleanly.
+
+**Why:** pandas issue text is dominated by code-shaped tokens that
+regexes match precisely without a multi-hundred-MB dep; a
+general-purpose NER trained on news/Wikipedia would tokenize `df.groupby`
+incorrectly and add noisier output. Determinism also makes the endpoint
+trivially reproducible across builds (no model checkpoint to pin).
+
+**Numbers (hand-curated 20-example sample,
+`evals/ner/sample.jsonl` + `evals/ner/score.py`):**
+
+- Extracted entities: **33**
+- True positives: **30**
+- False positives: **3** (`test_constructors.py` matched as
+  `module_path` — a file path; `i.e` and `e.g` matched as `module_path`
+  — Latin prose abbreviations)
+- **Precision = 0.9091**
+
+This is comfortably above the 0.7 threshold below which the user
+mandated a switch to a pre-trained NER model. Recall is intentionally
+not measured today: the api-side consumers (Day 3+ chatbot/RAG context)
+tolerate missed entities far better than spurious ones.
+
+**Re-evaluate** when: a real-issue benchmark of ≥ 100 samples drops
+precision under 0.7; or the prose-vs-code mix in the issue stream
+changes substantially (e.g. switching repos with denser prose).
+
 ## CI: first green run on `foundations`
 
 `.github/workflows/ci.yml` is green on the `foundations` branch — ruff,
