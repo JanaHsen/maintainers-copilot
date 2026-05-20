@@ -23,6 +23,7 @@ dependencies = [
   "pandas>=2.2",
   "pyarrow>=17.0",
   "psycopg[binary]>=3.2",
+  "anthropic>=0.40",
 ]
 
 [dependency-groups]

@@ -1113,6 +1113,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "anthropic" },
     { name = "arize-phoenix" },
     { name = "boto3" },
     { name = "fastapi" },
@@ -1152,6 +1153,7 @@ ml = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "anthropic", specifier = ">=0.40" },
     { name = "arize-phoenix", specifier = ">=5.0" },
     { name = "boto3", specifier = ">=1.35" },
     { name = "fastapi", specifier = ">=0.115" },

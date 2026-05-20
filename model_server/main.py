@@ -37,7 +37,9 @@ from model_server.boot_check import (
     verify_artifacts,
 )
 from model_server.inference import StateDictLoadError, load_model
-from model_server.routers import api_router
+from model_server.routers.classify import router as classify_router
+from model_server.routers.ner import router as ner_router
+from model_server.routers.summarize import router as summarize_router
 from model_server.storage import ArtifactStorage, get_storage
 from model_server.tracing import setup_tracing, shutdown_tracing
 
@@ -112,7 +114,9 @@ app.add_middleware(RequestContextMiddleware)
 # Instrument before the ASGI/middleware stack serves any request — same
 # constraint as the api (Rule 7: observability must actually work).
 setup_tracing(app)
-app.include_router(api_router)
+app.include_router(classify_router)
+app.include_router(ner_router)
+app.include_router(summarize_router)
 
 
 @app.get("/health")

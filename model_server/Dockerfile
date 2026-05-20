@@ -32,6 +32,7 @@ RUN /app/.venv/bin/python -c "from transformers import AutoTokenizer, DistilBert
 # etc.) and the model_server/ package itself.
 COPY app/ ./app/
 COPY model_server/ ./model_server/
+COPY prompts/ ./prompts/
 
 ENV PATH="/app/.venv/bin:$PATH"
 

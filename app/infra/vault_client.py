@@ -22,6 +22,7 @@ SECRET_PATH = "maintainers-copilot"
 KEY_DATABASE_PASSWORD = "database_password"  # key name, not a secret value
 KEY_MINIO_ROOT_PASSWORD = "minio_root_password"  # key name, not a secret value
 KEY_GITHUB_PAT = "github_pat"  # key name, not a secret value
+KEY_ANTHROPIC_API_KEY = "anthropic_api_key"  # key name, not a secret value
 
 
 class VaultBootstrapError(RuntimeError):

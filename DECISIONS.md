@@ -237,6 +237,35 @@ tolerate missed entities far better than spurious ones.
 precision under 0.7; or the prose-vs-code mix in the issue stream
 changes substantially (e.g. switching repos with denser prose).
 
+## /summarize: Claude Haiku via the shared anthropic_client
+
+The model server's `/summarize` endpoint generates 1-3 sentence
+summaries via Claude Haiku (`claude-haiku-4-5-20251001`) rather than a
+pre-trained extractive or abstractive summarizer.
+
+**Why:** the pre-trained alternatives (BART/T5/PEGASUS) each add a
+multi-hundred-MB weight file to the model_server image, require their
+own fine-tune cycle to do well on pandas issue text, and produce
+generic summaries that need post-processing. Claude Haiku gives us
+issue-aware summaries with a short, versioned prompt and zero
+additional model weights to manage. The system prompt
+(`prompts/summarizer.md`) is sent with Anthropic prompt caching
+(`cache_control: ephemeral`) so its tokens are amortized across the
+request stream.
+
+The endpoint surfaces upstream failures as typed HTTP responses
+(Rule 11): 503 for missing/invalid api key or network errors, 429 for
+rate limiting, 504 for timeouts, 502 for malformed/4xx upstream
+responses. The `anthropic_api_key` is read from Vault at call time
+(Rule 2) — the api lifespan does **not** require it at boot, so a
+process without the key still serves /classify and /ner; only
+/summarize returns 503.
+
+**Re-evaluate** when: per-summary latency budget tightens below Haiku's
+p95 (~600ms), or sustained `summarize` volume makes API cost dominant
+in the per-1k-prediction budget (a self-hosted summarizer becomes
+cheaper at sufficient scale).
+
 ## CI: first green run on `foundations`
 
 `.github/workflows/ci.yml` is green on the `foundations` branch — ruff,

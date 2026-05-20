@@ -31,18 +31,29 @@ for _ in {1..30}; do
   sleep 1
 done
 
-# Preserve any existing github_pat unless a new one is supplied via env.
+# Preserve any existing github_pat / anthropic_api_key unless a new one is
+# supplied via env. Both keys are operator-supplied — github_pat for the
+# dataset fetch, anthropic_api_key for the model server's /summarize.
 existing_pat=""
+existing_anthropic=""
 existing_json="$(curl -fsS -H "X-Vault-Token: ${VAULT_DEV_ROOT_TOKEN_ID}" "${SECRET_URL}" 2>/dev/null || true)"
 if [ -n "${existing_json}" ]; then
   existing_pat="$(printf '%s' "${existing_json}" \
     | grep -o '"github_pat"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
+  existing_anthropic="$(printf '%s' "${existing_json}" \
+    | grep -o '"anthropic_api_key"[[:space:]]*:[[:space:]]*"[^"]*"' \
     | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
 fi
 
 github_pat="${GITHUB_PAT:-${existing_pat}}"
 if [ -z "${github_pat}" ]; then
   echo "note: no GITHUB_PAT supplied and none stored; seeding empty github_pat (api does not need it; the dataset fetch does)."
+fi
+
+anthropic_api_key="${ANTHROPIC_API_KEY:-${existing_anthropic}}"
+if [ -z "${anthropic_api_key}" ]; then
+  echo "note: no ANTHROPIC_API_KEY supplied and none stored; seeding empty anthropic_api_key (/summarize will return 503 until one is provided)."
 fi
 
 echo "Seeding secret/maintainers-copilot..."
@@ -54,7 +65,8 @@ curl -fsS -X POST \
   "data": {
     "database_password": "dev_postgres_password",
     "minio_root_password": "dev_minio_password",
-    "github_pat": "${github_pat}"
+    "github_pat": "${github_pat}",
+    "anthropic_api_key": "${anthropic_api_key}"
   }
 }
 JSON
