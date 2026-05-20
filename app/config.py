@@ -6,7 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # protected_namespaces=() lets us name the model-server host/port fields
+    # with the natural `model_server_` prefix (pydantic otherwise reserves
+    # the `model_` prefix for BaseModel internals).
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", protected_namespaces=()
+    )
 
     vault_addr: str = Field(default="http://vault:8200")
     vault_dev_root_token_id: str = Field(...)
@@ -25,6 +30,9 @@ class Settings(BaseSettings):
     redis_host: str = Field(default="redis")
     minio_host: str = Field(default="minio")
     minio_root_user: str = Field(default="minioadmin")
+
+    model_server_host: str = Field(default="model-server")
+    model_server_port: int = Field(default=8001)
 
     phoenix_otlp_endpoint: str = Field(default="http://phoenix:4317")
 
