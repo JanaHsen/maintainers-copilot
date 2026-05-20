@@ -19,6 +19,15 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --group ml
 
+# Pre-cache the base architecture + tokenizer so first boot doesn't need
+# network access to Hugging Face Hub. The state_dict is overridden at
+# runtime by the fine-tuned weights pulled from MinIO; only the
+# tokenizer config and base architecture come from this cache.
+ENV HF_HOME=/app/.cache/huggingface
+RUN /app/.venv/bin/python -c "from transformers import AutoTokenizer, DistilBertForSequenceClassification; \
+    AutoTokenizer.from_pretrained('distilbert-base-uncased'); \
+    DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased')"
+
 # Application code — both the shared app/ tree (for app.infra.vault_client
 # etc.) and the model_server/ package itself.
 COPY app/ ./app/

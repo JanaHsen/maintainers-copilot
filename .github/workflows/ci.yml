@@ -14,7 +14,10 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Sync dependencies
-        run: uv sync --frozen
+        # --group ml installs the model_server's torch + transformers stack
+        # so mypy and the model_server tests can run against the same surface
+        # the production image ships with.
+        run: uv sync --frozen --group ml
 
       - name: Prepare .env
         run: |

@@ -1,11 +1,14 @@
 """Model server ASGI entrypoint.
 
-Lifespan order: Vault (for MinIO creds) → artifact integrity check → serve.
-Any artifact-integrity failure is fatal: one specific log line per mismatch
-type and the exception propagates so uvicorn aborts startup and the
-container exits non-zero (Rule 4). The endpoints themselves are placeholders
-in slice (b); slice (c) loads weights into a torch model and serves real
-inference, slices (e)/(f) fill in /ner and /summarize.
+Lifespan order: Vault (for MinIO creds) -> artifact integrity check ->
+state_dict load into DistilBertForSequenceClassification -> serve. Any
+artifact-integrity failure *and* any state_dict load failure are fatal:
+one specific log line per mismatch type, and the exception propagates so
+uvicorn aborts startup and the container exits non-zero (Rule 4).
+
+Tracing + request-context middleware are wired so the model server's
+spans show up alongside the api's in Phoenix and the request id flows
+through both services (Rule 7).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from fastapi import FastAPI
 
 from app.infra import vault_client
 from app.infra.log_redaction import RedactingFilter
+from app.infra.request_context import RequestContextMiddleware
 from app.infra.vault_client import KEY_MINIO_ROOT_PASSWORD, VaultBootstrapError
 from model_server import state
 from model_server.boot_check import (
@@ -32,8 +36,10 @@ from model_server.boot_check import (
     WeightsMissingError,
     verify_artifacts,
 )
+from model_server.inference import StateDictLoadError, load_model
 from model_server.routers import api_router
 from model_server.storage import ArtifactStorage, get_storage
+from model_server.tracing import setup_tracing, shutdown_tracing
 
 logger = logging.getLogger("model_server")
 
@@ -45,8 +51,7 @@ def _configure_logging() -> None:
 
 
 # Map every refuse-to-boot failure to its own specific log line (Rule 4).
-# Order matters only for readability — verify_artifacts raises at most one.
-_REFUSE_TO_BOOT_LINES: dict[type[ArtifactIntegrityError], str] = {
+_REFUSE_TO_BOOT_LINES: dict[type[Exception], str] = {
     ModelCardMissingError: "REFUSE TO BOOT: model_card.json missing",
     ModelCardSchemaError: "REFUSE TO BOOT: model_card.json schema invalid",
     Label2IdMismatchError: "REFUSE TO BOOT: architecture.label2id mismatch",
@@ -54,11 +59,12 @@ _REFUSE_TO_BOOT_LINES: dict[type[ArtifactIntegrityError], str] = {
     WeightsHashMismatchError: "REFUSE TO BOOT: weights SHA-256 mismatch",
     TrainParquetMissingError: "REFUSE TO BOOT: train.parquet missing",
     TrainingDataHashMismatchError: "REFUSE TO BOOT: training_data_hash mismatch",
+    StateDictLoadError: "REFUSE TO BOOT: state_dict.pt failed to load into model",
 }
 
 
 def run_boot_check(storage: ArtifactStorage) -> None:
-    """Verify artifacts; on failure log one specific line and re-raise."""
+    """Verify artifacts, then load weights into the model. Either failure is fatal."""
     try:
         verified = verify_artifacts(storage)
     except ArtifactIntegrityError as exc:
@@ -75,6 +81,14 @@ def run_boot_check(storage: ArtifactStorage) -> None:
         sorted(verified.label2id),
     )
 
+    try:
+        loaded = load_model(verified)
+    except StateDictLoadError as exc:
+        logger.critical("%s: %s", _REFUSE_TO_BOOT_LINES[StateDictLoadError], exc)
+        raise
+    state.set_model(loaded)
+    logger.info("model loaded; ready to serve /classify")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -89,14 +103,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        shutdown_tracing()
         state.clear_artifacts()
 
 
 app = FastAPI(title="Maintainer's Copilot — Model Server", lifespan=lifespan)
+app.add_middleware(RequestContextMiddleware)
+# Instrument before the ASGI/middleware stack serves any request — same
+# constraint as the api (Rule 7: observability must actually work).
+setup_tracing(app)
 app.include_router(api_router)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    """Liveness probe. Reaches here only after a successful boot check."""
+    """Liveness probe. Reaches here only after a successful boot."""
     return {"status": "ok"}
