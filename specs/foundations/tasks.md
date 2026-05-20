@@ -4,7 +4,7 @@ description: "Task list for Day 1 Foundations implementation"
 
 # Tasks: Day 1 Foundations — Infrastructure, Health, Dataset Pipeline
 
-**Input**: Design documents from `/specs/001-foundations/`
+**Input**: Design documents from `/specs/foundations/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
 
