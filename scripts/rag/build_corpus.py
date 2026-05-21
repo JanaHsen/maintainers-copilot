@@ -123,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     issues_result = fetch_issues(
         dataset_run_id=args.dataset_run_id,
         fixture_dir=args.fixture,
+        corpus_run_id=corpus_run_id,
     )
     logger.info(
         "fetched %d docs (skipped=%d) and %d issues "

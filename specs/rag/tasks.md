@@ -64,6 +64,21 @@ description: "Task list for the advanced RAG pipeline — /retrieve, corpus buil
 
 - [X] T007 [P] [US2] Implement `scripts/rag/fetch_issues_held_out.py`: GraphQL fetch via the existing PAT-from-Vault pattern from `scripts/dataset/fetch_issues_graphql.py`; **read `processed/pandas/{dataset_run_id}/{train,val,test}.parquet` from MinIO and refuse to start if any is missing**; assemble the held-out issue set by excluding every issue_number found in the three splits. **Maintainer-response filter (client-side, applied after the GraphQL fetch)**: drop any issue that has zero comments with `author_association ∈ {MEMBER, OWNER, COLLABORATOR}`. The GraphQL query already returns `author_association` on each comment node — this filter runs against the fetched data, no schema change. Emit `(source_id, source_timestamp, title, body, comments[])` tuples for the surviving (held-out **and** maintainer-touched) slice; in fixture mode read `tests/fixtures/rag_smoke/issues/*.json` and apply the same exclusions. Acceptance: a unit test passes a fake split that includes one fixture issue number and verifies it's excluded; a second unit test passes a fake comments list where no comment has a maintainer association and verifies the issue is dropped; the `excluded_issue_numbers.txt` artifact lists every split-overlapping issue encountered; against the real run, zero issues from the three splits land in the corpus and every surviving issue has at least one maintainer-association comment. Rules: 2, 9.
 
+  > **T007 follow-up (was [X] but only fixture-mode shipped):** The
+  > original landing covered classifier-split exclusion + maintainer-
+  > response filter against fixture JSON; the real-mode GraphQL fetch was
+  > left as a `NotImplementedError` stub. The follow-up commit
+  > `fetch_issues_held_out: real-mode GraphQL fetch (was stubbed when T007
+  > marked complete)` adds: PAT-from-Vault, the comments + authorAssociation
+  > query, rate-limit-aware pagination, in-flight filtering, and MinIO
+  > caching under `rag/held_out_issues/{corpus_run_id}/batch_NNNN.jsonl`
+  > + a terminal `cache_meta.json` so a re-run against the same
+  > `corpus_run_id` short-circuits the GraphQL hop. Tests in
+  > `tests/scripts/test_fetch_issues_held_out.py::TestFetchFromGithub`
+  > cover the three cases: filter-in-flight, cache hit, and the
+  > `GithubPatMissingError` raised when Vault still has the `n/a`
+  > placeholder. **See the Spec-Kit auto-marking note in §Notes below.**
+
 - [X] T008 [P] [US2] Implement `scripts/rag/chunk_parent_document.py`: split each source into ≈2000-char **parent** chunks at section boundaries (markdown headings / RST section markers) and ≈400-char **child** chunks inside each parent at sentence/paragraph boundaries; emit `(parent_id, parent_text, parent_index)` and `(child_id, parent_id, child_text, child_index)` tuples with **deterministic IDs** per `research.md` R7 (SHA-256 of `(corpus_run_id, source_type, source_id, section_path, parent_index, parent_content)` truncated to 26 chars, and similarly for children). Acceptance: chunking the same source twice produces byte-identical IDs; ratio of total child chars to total parent chars ≈ 1 (every parent's text is fully covered by its children). Rules: 9.
 
 - [X] T009 [P] [US2] Implement `scripts/rag/chunk_naive.py`: split each source into fixed-≈400-char chunks with no parent/child distinction (used by the naive baseline pipeline). Acceptance: chunk count for a known source matches `ceil(len(text) / 400)`; IDs are deterministic in the same way as T008. Rules: 9.
@@ -224,3 +239,4 @@ Setup (T001–T003) → Foundational (T004–T005) → US2 corpus build (T006–
 - Push after each commit (mirror the slice cadence the foundations branch has been using).
 - Each task lists the Rule numbers it respects (constitution requirement for `tasks.md`).
 - The two stop-and-ask blocks (T027, T037) are the ONLY places the implementer pauses for operator input; every other decision in this list has a baked-in answer.
+- **Spec-Kit auto-marking gap (learned from T007):** Tasks that describe **both** a fixture mode and a real mode for the same script (or any other "smoke + production" pair) MUST be verified for **both** modes before the `[ ]` flips to `[X]`. T007 was marked complete after only fixture mode landed — the real-mode GraphQL fetch was a `NotImplementedError` stub until a follow-up commit. The auto-marker has no way to know which acceptance bullets it actually exercised, so the implementer is the last line of defense. **Rule of thumb**: re-read the task's Acceptance line and confirm every clause is observably true before marking. For dual-mode tasks (T006, T007, future doc/issue/fetch tasks), the real-mode acceptance clause is the one most likely to be skipped.
