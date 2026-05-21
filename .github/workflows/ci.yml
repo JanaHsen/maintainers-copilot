@@ -39,12 +39,13 @@ jobs:
           fi
           echo "secret-grep clean"
 
-      - name: Tests (redaction Rule 7, refuse-to-boot Rule 4)
+      - name: Tests (redaction Rule 7, refuse-to-boot Rule 4, eval gate logic)
         run: |
           uv run pytest \
             tests/infra/test_log_redaction.py \
             tests/infra/test_refuse_to_boot.py \
             tests/model_server/test_boot_check.py \
+            tests/evals/test_eval_classification.py \
             -q
 
       - name: Build image
@@ -71,6 +72,19 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
           echo "GET /health -> $code"
           [ "$code" = "200" ] || { docker compose logs api; docker compose down -v; exit 1; }
+
+      - name: Classifier eval gate (Rule 5 / Rule 10)
+        # Live DistilBERT inference over evals/classification/golden.jsonl
+        # via the model server's /classify endpoint. Writes the full report
+        # (macro_f1, per_class_f1, confusion_matrix, predictions) to MinIO
+        # at evals/reports/{ts}/classification.json and exits non-zero if
+        # macro-F1 falls below the floor in eval_thresholds.yaml.
+        env:
+          VAULT_ADDR: http://localhost:8200
+          MINIO_HOST: localhost
+        run: |
+          uv run python evals/classification/eval_classification.py \
+            --model-server-url http://localhost:8001
 
       - name: Stack down
         if: always()

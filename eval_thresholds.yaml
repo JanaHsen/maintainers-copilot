@@ -1,15 +1,30 @@
-# Eval thresholds. PLACEHOLDER values, NOT enforced on Day 1 (Rule 5/10
-# scoped deferral — golden sets + trained classifier do not exist until
-# Days 2-3; see DECISIONS.md). Days 2-3 set real values and flip `enforced`.
-enforced: false
+# Eval thresholds enforced by CI on every push.
+#
+# `evals/classification/eval_classification.py` reads this file and the
+# deployed classifier's macro-F1 over `evals/classification/golden.jsonl`,
+# and exits non-zero if `classifier.macro_f1_floor` is breached.
+enforced: true
 
-classification:
-  # Day 2 fills these from the trained DistilBERT on the test split.
-  min_accuracy: 0.0
-  min_macro_f1: 0.0
+classifier:
+  # Macro-F1 floor only. With 6-7 examples per class in the golden set, one
+  # misclassification swings per-class F1 by ~15-17 points; gating on that
+  # would be gating on noise. Per-class F1 and the confusion matrix ARE
+  # still computed and written to the eval report at
+  # `evals/reports/{ts}/classification.json` for operator inspection — they
+  # are just not enforced. See evals/classification/README.md.
+  macro_f1_floor: 0.65
+  notes: >
+    0.65 is a deliberately conservative floor. The deployed DistilBERT
+    measures macro-F1 0.7898 on the full test split (DECISIONS.md "Two-way
+    classifier comparison"); the val-split golden set is small enough that
+    we expect more noise. Setting the floor at 0.65 gates real regression
+    while tolerating ~one or two off-by-class predictions on the 25-row
+    sample. Revisit if observed macro-F1 trends consistently above 0.75
+    over several pushes — at that point the floor can move up without
+    risking false positives.
 
+# Day 3 fills these from the RAG golden set.
 rag:
-  # Day 3 fills these from the RAG golden set.
   min_answer_relevance: 0.0
   min_context_precision: 0.0
   max_p95_latency_ms: 0
