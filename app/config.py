@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     phoenix_otlp_endpoint: str = Field(default="http://phoenix:4317")
 
+    # RAG corpus run pinned at boot. The api refuses to boot if this is
+    # unset or no rows match it in rag_chunks (see Rule 4 / data-model.md
+    # "Lifecycle / boot-time invariants").
+    rag_corpus_run_id: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:

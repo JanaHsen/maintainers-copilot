@@ -4,10 +4,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.api.routers import api_router
+from app.config import get_settings
 from app.infra import database, minio_client, redis_client, vault_client
-from app.infra.database import DatabaseUnreachableError
+from app.infra.database import DatabaseUnreachableError, get_engine
 from app.infra.log_redaction import RedactingFilter
 from app.infra.minio_client import MinioUnreachableError
 from app.infra.request_context import RequestContextMiddleware
@@ -17,6 +20,7 @@ from app.infra.vault_client import (
     KEY_MINIO_ROOT_PASSWORD,
     VaultBootstrapError,
 )
+from app.repositories import chunk_repository
 
 logger = logging.getLogger("app")
 
@@ -67,12 +71,71 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.critical("REFUSE TO BOOT: MinIO dependency failed: %s", exc)
         raise
 
+    # RAG boot checks (data-model.md "Lifecycle / boot-time invariants").
+    # Each failure logs ONE specific REFUSE TO BOOT line and propagates so
+    # uvicorn aborts startup and the container exits non-zero (Rule 4).
+    _verify_rag_corpus()
+
     logger.info("startup complete: all required dependencies reachable")
     try:
         yield
     finally:
         shutdown_tracing()
         database.get_engine().dispose()
+
+
+class RagCorpusNotConfiguredError(RuntimeError):
+    """RAG_CORPUS_RUN_ID env var is unset — refuse-to-boot."""
+
+
+class RagCorpusEmptyError(RuntimeError):
+    """rag_chunks has no rows for the configured corpus_run_id — refuse-to-boot."""
+
+
+class PgvectorMissingError(RuntimeError):
+    """The pgvector extension or the rag_chunks table is missing — refuse-to-boot."""
+
+
+def _verify_rag_corpus() -> None:
+    """Four-line refuse-to-boot surface for the RAG corpus state."""
+    corpus_run_id = get_settings().rag_corpus_run_id
+    if not corpus_run_id:
+        logger.critical("REFUSE TO BOOT: RAG_CORPUS_RUN_ID not configured")
+        raise RagCorpusNotConfiguredError("RAG_CORPUS_RUN_ID is unset")
+    try:
+        with get_engine().connect() as conn:
+            present = conn.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname='vector'")
+            ).first()
+            if not present:
+                logger.critical("REFUSE TO BOOT: pgvector extension absent")
+                raise PgvectorMissingError("pg_extension 'vector' not installed")
+            # Table-exists check separately so an empty-table failure isn't
+            # confused with a missing-table failure.
+            try:
+                conn.execute(text("SELECT 1 FROM rag_chunks LIMIT 1"))
+            except ProgrammingError as exc:
+                logger.critical("REFUSE TO BOOT: rag_chunks table missing: %s", exc)
+                raise PgvectorMissingError("rag_chunks table missing") from exc
+    except OperationalError as exc:  # Postgres unreachable; covered upstream too
+        logger.critical("REFUSE TO BOOT: Postgres unreachable during RAG check: %s", exc)
+        raise
+
+    if chunk_repository.is_empty(corpus_run_id):
+        # Distinguish "table empty entirely" from "configured run id missing".
+        with get_engine().connect() as conn:
+            any_row = conn.execute(text("SELECT 1 FROM rag_chunks LIMIT 1")).first()
+        if any_row is None:
+            logger.critical("REFUSE TO BOOT: rag_chunks table empty")
+        else:
+            logger.critical(
+                "REFUSE TO BOOT: configured corpus run id has no rows: %s",
+                corpus_run_id,
+            )
+        raise RagCorpusEmptyError(
+            f"no rag_chunks rows for corpus_run_id={corpus_run_id!r}"
+        )
+    logger.info("RAG corpus check ok: corpus_run_id=%s", corpus_run_id)
 
 
 app = FastAPI(title="Maintainer's Copilot", lifespan=lifespan)
