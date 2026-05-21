@@ -119,6 +119,9 @@ services:
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      # RAG corpus pinned at boot; the api refuses to boot if this is unset
+      # or no rag_chunks rows match (Rule 4 — see app/main.py).
+      RAG_CORPUS_RUN_ID: ${RAG_CORPUS_RUN_ID:-}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
