@@ -1,15 +1,31 @@
-# Eval thresholds. PLACEHOLDER values, NOT enforced on Day 1 (Rule 5/10
-# scoped deferral — golden sets + trained classifier do not exist until
-# Days 2-3; see DECISIONS.md). Days 2-3 set real values and flip `enforced`.
-enforced: false
+# Eval thresholds enforced by CI on every push.
+#
+# Classifier floors are set 5 percentage points below the deployed
+# classifier's observed numbers on the canonical pandas test split
+# (`processed/pandas/20260519T133455Z/test.parquet`, n=2539), so normal
+# noise on the 25-example golden set does not trip the gate while a
+# real regression does. See DECISIONS.md "Two-way classifier comparison"
+# for the source numbers.
+#
+# CI gate: `python evals/classification/eval_classification.py --check`
+# reads `evals/classification/last_eval.json` and exits non-zero if any
+# metric is below its floor. The operator regenerates last_eval.json
+# via `--measure` after model changes.
+enforced: true
 
-classification:
-  # Day 2 fills these from the trained DistilBERT on the test split.
-  min_accuracy: 0.0
-  min_macro_f1: 0.0
+classifier:
+  # 5pt buffer below the observed test macro-F1 of 0.7898.
+  macro_f1_floor: 0.74
+  per_class_f1_floor:
+    # Buffers vary by class size — `question` has only 73 test samples so
+    # noise is larger; its floor stays well below the observed 0.4503.
+    bug: 0.88
+    docs: 0.83
+    feature: 0.85
+    question: 0.40
 
+# Day 3 fills these from the RAG golden set.
 rag:
-  # Day 3 fills these from the RAG golden set.
   min_answer_relevance: 0.0
   min_context_precision: 0.0
   max_p95_latency_ms: 0

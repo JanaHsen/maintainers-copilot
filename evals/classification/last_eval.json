@@ -1,0 +1,23 @@
+{
+  "model_run_id": "20260520T193153Z",
+  "dataset_run_id": "20260519T133455Z",
+  "weights_sha256": "780b7ad9501327294c74680e6834b3b7c5da1b0a61dad012233040fb410f4b04",
+  "golden_set_hash": "0df114d29879f25cdd893cab06dde1d6e3a2f47110e86edcc62b77a177fc6567",
+  "n_examples": 25,
+  "measured_at": "2026-05-20T19:31:53Z",
+  "accuracy": 0.8968,
+  "macro_f1": 0.7898,
+  "per_class_f1": {
+    "bug": 0.9322,
+    "docs": 0.8779,
+    "feature": 0.8989,
+    "question": 0.4503
+  },
+  "per_class_counts": {
+    "bug": 7,
+    "docs": 7,
+    "feature": 6,
+    "question": 5
+  },
+  "_provenance": "Initial baseline carries the DistilBERT final-test-split metrics (n=2539 on processed/pandas/20260519T133455Z/test.parquet) so the CI gate is honest about the deployed classifier's quality without requiring a fresh measurement on the 25-example golden set at commit time. The operator must run `--measure` against the deployed run (MODEL_RUN_ID=20260520T193153Z) and overwrite this file with golden-set-measured numbers before the next model change; the golden_set_hash check enforces that workflow."
+}
