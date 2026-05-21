@@ -168,11 +168,14 @@ test so `test_min_closed_at > train_val_max_closed_at` (FR-016/SC-006).
   fine-tuning on Day 2 will use class-weighted loss to compensate
   (test count 73 is above the ~30 floor for stable per-class F1).
 
-## Training data integrity hash  — hash value SUPERSEDED (v1.2.0)
+## Training data integrity hash  — SUPERSEDED (algorithm + hash value)
 
-> **SUPERSEDED hash value.** The mechanism still applies; the specific hash
-> below is for the pandas train split and will change with the scikit-learn
-> regeneration. Retained for audit.
+> **SUPERSEDED.** Both the **algorithm** (JSON-canonical row hash →
+> parquet-bytes SHA-256) and the **hash value** itself (v1.2.0
+> scikit-learn switch; v1.3.0 pandas revert; pandas-version drift)
+> have been superseded. See **Training data hash algorithm** below
+> for the current scheme. Retained verbatim for the Rule 6 audit
+> trail.
 
 `splits_report.json` includes `training_data_sha256`, a SHA-256 over the
 canonical JSON serialization of the train split (rows sorted by issue
@@ -184,6 +187,62 @@ than the one currently in MinIO (Rule 4 weights-integrity for training
 data).
 
 **Hash:** `a69163846b9d51502416c574e6ab4d77031ca1ca547d00ed095831d5b3c22294`.
+
+## Training data hash algorithm
+
+`training_data_hash` is the **SHA-256 of the train.parquet byte
+buffer** uploaded to MinIO at
+`processed/pandas/{dataset_run_id}/train.parquet`. The dataset
+pipeline (`scripts/dataset/build_splits.py`) computes it on the same
+bytes it uploads, and `model_card.json` records the same value under
+`data.training_data_hash` with `data.training_data_hash_algorithm =
+"sha256_of_parquet_bytes"` for provenance. The model-server boot
+check (`model_server/boot_check.py`) re-derives the hash from MinIO
+on every startup and refuses to boot on any mismatch (Rule 4).
+
+**Hash:** `a420731c5a3f1ec8fbea8d24c63fe099b9fee73553968df9ab9b4343262f0f39`
+(the published `train.parquet` under
+`s3://maintainers-copilot/processed/pandas/20260519T133455Z/`,
+9,434,327 bytes).
+
+### Why the algorithm changed
+
+The original scheme (above) hashed a canonical JSON over the four
+content columns of sorted train rows. It was designed to be invariant
+to incidental row-metadata changes, but it relied on `pd.util.hash_pandas_object`
+in the model server's verifier — which, in turn, isn't stable across
+pandas major versions. Colab trained on one pandas and wrote
+`a69163846b9d51…` into `model_card.json`; the serving image runs a
+different pandas major and recomputed `5c30865393705ce…` from the
+same `train.parquet`. CI's boot check refused the legitimate
+artifact with a `TrainingDataHashMismatchError`.
+
+Parquet-bytes SHA-256 is:
+
+* **Deterministic across pandas versions.** It hashes the file
+  buffer the writer emits; no library-level Python hash function is
+  involved at verify time.
+* **Byte-stable in our pipeline.** `pandas.to_parquet` + the pinned
+  `pyarrow>=17.0` engine in `pyproject.toml` produce byte-identical
+  output for the same input rows. The `_build_parquet_bytes` helper
+  in `build_splits.py` is the single source of truth for those bytes,
+  and it's the same bytes that get hashed and uploaded.
+* **Just-as-strong as a tamper detector.** A modified `train.parquet`
+  necessarily produces a different SHA — schema change, row change,
+  metadata change all surface as a mismatch and refuse the boot.
+
+What the new scheme gives up vs. the old: invariance to incidental
+parquet-format metadata (writer version stamps, etc.). In practice
+those don't change inside our pipeline because the parquet writer
+is pinned, and a re-emission with the same input rows produces the
+same bytes; we test this by re-running `build_splits.py` against a
+fixed `run_id` and comparing.
+
+See: `model_server/boot_check.py::_compute_training_data_hash`,
+`scripts/dataset/build_splits.py` (the `_build_parquet_bytes` +
+`_report` pair that hashes on upload), and the
+`classifier-v1-20260520T193153Z` GitHub Release where the patched
+`model_card.json` lives.
 
 ## Tracing backend: Phoenix (Arize)
 
