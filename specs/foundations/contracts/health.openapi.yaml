@@ -1,0 +1,83 @@
+openapi: 3.1.0
+info:
+  title: Maintainer's Copilot — Day 1 Health Contract
+  version: "1.0.0"
+  description: >
+    The only HTTP surface delivered Day 1. The process only ever starts when
+    Vault is reachable (Rule 4); therefore /health always returns HTTP 200
+    while the process is up, and conveys degradation in the body, not the
+    transport status (FR-006, FR-007).
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Report reachability of every upstream dependency
+      responses:
+        "200":
+          description: >
+            Process is up. `status` is "ok" iff every dependency is reachable,
+            otherwise "degraded". A non-Vault dependency being down still
+            yields 200 with that dependency marked unreachable.
+          headers:
+            X-Request-Id:
+              schema: { type: string }
+            X-Trace-Id:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthReport"
+              examples:
+                allHealthy:
+                  value:
+                    status: ok
+                    request_id: "a1b2c3d4"
+                    trace_id: "7f3e...e21"
+                    dependencies:
+                      - { name: postgres, reachable: true,  detail: null, latency_ms: 4.1 }
+                      - { name: pgvector, reachable: true,  detail: null, latency_ms: 1.0 }
+                      - { name: redis,    reachable: true,  detail: null, latency_ms: 0.8 }
+                      - { name: minio,    reachable: true,  detail: null, latency_ms: 6.3 }
+                      - { name: vault,    reachable: true,  detail: null, latency_ms: 3.2 }
+                redisDown:
+                  value:
+                    status: degraded
+                    request_id: "e5f6a7b8"
+                    trace_id: "11ab...c90"
+                    dependencies:
+                      - { name: postgres, reachable: true,  detail: null, latency_ms: 4.4 }
+                      - { name: pgvector, reachable: true,  detail: null, latency_ms: 1.1 }
+                      - { name: redis,    reachable: false, detail: "ConnectionError", latency_ms: 2000.0 }
+                      - { name: minio,    reachable: true,  detail: null, latency_ms: 6.0 }
+                      - { name: vault,    reachable: true,  detail: null, latency_ms: 3.0 }
+components:
+  schemas:
+    DependencyStatus:
+      type: object
+      required: [name, reachable, latency_ms]
+      properties:
+        name:
+          type: string
+          enum: [postgres, pgvector, redis, minio, vault]
+        reachable:
+          type: boolean
+        detail:
+          type: [string, "null"]
+          description: Redacted error class/summary when unreachable (Rule 7)
+        latency_ms:
+          type: number
+    HealthReport:
+      type: object
+      required: [status, dependencies, request_id, trace_id]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        dependencies:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/DependencyStatus" }
+        request_id:
+          type: string
+        trace_id:
+          type: string

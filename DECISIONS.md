@@ -274,3 +274,46 @@ and the compose `/health` smoke all pass:
 
 - Run: https://github.com/JanaHsen/maintainers-copilot/actions/runs/26089474565
   (`conclusion=success`).
+
+  ## Two-way classifier comparison (DistilBERT vs Claude Haiku 4.5)
+
+Both classifiers evaluated on the same canonical test split
+(processed/pandas/20260519T133455Z/test.parquet, n=2539). Numbers are
+the source of the deployment choice (Rule 6).
+
+| Metric                  | DistilBERT (fine-tuned) | Claude Haiku 4.5 |
+|-------------------------|-------------------------|------------------|
+| Accuracy                | 0.8968                  | 0.8956           |
+| Macro-F1                | 0.7898                  | 0.7890           |
+| F1 bug                  | 0.9322                  | 0.9275           |
+| F1 docs                 | 0.8779                  | 0.8892           |
+| F1 feature              | 0.8989                  | 0.8789           |
+| F1 question             | 0.4503                  | 0.4605           |
+| Latency p50 (ms)        | <100 (local GPU)        | 717              |
+| Latency p95 (ms)        | <200 (local GPU)        | 1265             |
+| Cost per 1k predictions | ~$0 (own compute)       | $1.0786          |
+
+Quality is statistically tied: 0.12 percentage points on accuracy,
+8 ten-thousandths on macro-F1. Per-class differences split evenly —
+DistilBERT slightly stronger on feature (+0.02), Haiku slightly
+stronger on docs (+0.01) and question (+0.01).
+
+Deployment choice: **DistilBERT in production, Haiku as a fallback
+when the model server is unhealthy.** Three reasons:
+
+1. **Cost.** At 100,000 predictions per month, Haiku costs ~$108;
+   DistilBERT costs the GPU/CPU cycles already paid for. The cost
+   asymmetry compounds with scale.
+2. **Latency.** DistilBERT inference is sub-100ms on local CPU/GPU;
+   Haiku's p50 is 717ms, p95 is 1265ms. A maintainer triaging a
+   queue cares about throughput.
+3. **Reliability.** DistilBERT has no external dependency; Haiku
+   adds a hard dependency on api.anthropic.com being up. Rule 11
+   requires graceful degradation — Haiku is what we degrade *to*,
+   not what we depend on.
+
+Sources:
+- DistilBERT: model_card.json at
+  s3://maintainers-copilot/artifacts/classifier/distilbert/20260520T193153Z/
+- Haiku: report.json at
+  s3://maintainers-copilot/artifacts/llm_baseline/20260520T234329Z/
