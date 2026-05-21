@@ -164,29 +164,22 @@ def _assign_splits(records: list[dict[str, object]]) -> None:
             r["split"] = "val" if i < k else "train"
 
 
-def _train_hash(records: list[dict[str, object]]) -> str:
-    """SHA-256 over the canonicalized train rows (sorted by issue number)."""
-    train_rows = sorted(
-        (r for r in records if r["split"] == "train"),
-        key=lambda r: int(r["issue_number"]),  # type: ignore[arg-type]
-    )
-    h = hashlib.sha256()
-    for r in train_rows:
-        canonical = {
-            "issue_number": r["issue_number"],
-            "title": r["title"],
-            "body": r["body"],
-            "target_class": r["target_class"],
-        }
-        h.update(json.dumps(canonical, sort_keys=True).encode("utf-8"))
-        h.update(b"\n")
-    return h.hexdigest()
+def _build_parquet_bytes(rows: list[dict[str, object]]) -> bytes:
+    """Serialize rows to a parquet byte buffer (same shape as the uploaded object)."""
+    frame = pd.DataFrame(rows)
+    if not frame.empty:
+        frame = frame.copy()
+        frame["closed_at"] = frame["closed_at"].astype(str)
+    buf = io.BytesIO()
+    frame.to_parquet(buf, index=False)
+    return buf.getvalue()
 
 
 def _report(
     records: list[dict[str, object]],
     run_id: str,
     exclusions: dict[str, int],
+    training_data_hash: str,
 ) -> dict[str, object]:
     counts: dict[str, dict[str, int]] = {
         s: defaultdict(int) for s in ("train", "val", "test")
@@ -207,24 +200,12 @@ def _report(
             "test_min_closed_at": test_min.isoformat(),
         },
         "exclusions": exclusions,
-        "training_data_sha256": _train_hash(records),
+        # SHA-256 of the train.parquet bytes uploaded in this same run.
+        # The model server's boot check verifies this exact hash against
+        # train.parquet on every startup (see model_server/boot_check.py).
+        "training_data_sha256": training_data_hash,
+        "training_data_hash_algorithm": "sha256_of_parquet_bytes",
     }
-
-
-def _put_parquet(
-    s3: object, run_id: str, split: str, rows: list[dict[str, object]]
-) -> None:
-    frame = pd.DataFrame(rows)
-    if not frame.empty:
-        frame = frame.copy()
-        frame["closed_at"] = frame["closed_at"].astype(str)
-    buf = io.BytesIO()
-    frame.to_parquet(buf, index=False)
-    s3.put_object(  # type: ignore[attr-defined]
-        Bucket=DATA_BUCKET,
-        Key=f"processed/pandas/{run_id}/{split}.parquet",
-        Body=buf.getvalue(),
-    )
 
 
 def main() -> int:
@@ -236,17 +217,30 @@ def main() -> int:
     issues = _read_raw(args.run_id)
     records, exclusions = _map_records(issues, precedence, classes)
     _assign_splits(records)
-    report = _report(records, args.run_id, exclusions)
 
-    ensure_bucket(DATA_BUCKET)
-    s3 = get_client()
+    # Materialize each split's parquet bytes BEFORE the report so we can hash
+    # train.parquet exactly as the model_server boot check will at startup
+    # (file-bytes SHA-256 — parquet-version-stable, pandas-version-stable).
+    split_bytes: dict[str, bytes] = {}
     for split in ("train", "val", "test"):
         rows = [
             {k: v for k, v in r.items() if k != "split"}
             for r in records
             if r["split"] == split
         ]
-        _put_parquet(s3, args.run_id, split, rows)
+        split_bytes[split] = _build_parquet_bytes(rows)
+
+    training_data_hash = hashlib.sha256(split_bytes["train"]).hexdigest()
+    report = _report(records, args.run_id, exclusions, training_data_hash)
+
+    ensure_bucket(DATA_BUCKET)
+    s3 = get_client()
+    for split, body in split_bytes.items():
+        s3.put_object(
+            Bucket=DATA_BUCKET,
+            Key=f"processed/pandas/{args.run_id}/{split}.parquet",
+            Body=body,
+        )
     s3.put_object(
         Bucket=DATA_BUCKET,
         Key=f"processed/pandas/{args.run_id}/splits_report.json",
