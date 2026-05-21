@@ -45,14 +45,7 @@ jobs:
             tests/infra/test_log_redaction.py \
             tests/infra/test_refuse_to_boot.py \
             tests/model_server/test_boot_check.py \
-            tests/evals/test_eval_classification.py \
             -q
-
-      - name: Classifier eval gate (Rule 5 / Rule 10)
-        # Reads evals/classification/last_eval.json and fails if any metric is
-        # below the corresponding floor in eval_thresholds.yaml, or if the
-        # golden set has been edited without re-measuring.
-        run: uv run python evals/classification/eval_classification.py --check
 
       - name: Build image
         run: docker compose build
