@@ -80,8 +80,10 @@ def test_smoke_end_to_end_parent_document(corpus_run_id: str) -> None:
                 "SELECT "
                 "  COUNT(*) FILTER (WHERE kind='parent') AS parents, "
                 "  COUNT(*) FILTER (WHERE kind='child')  AS children, "
-                "  COUNT(*) FILTER (WHERE kind='child' AND embedding IS NULL) AS child_null_emb, "
-                "  COUNT(*) FILTER (WHERE kind='parent' AND embedding IS NOT NULL) AS parent_nonnull_emb "
+                "  COUNT(*) FILTER (WHERE kind='child' AND embedding IS NULL) "
+                "    AS child_null_emb, "
+                "  COUNT(*) FILTER (WHERE kind='parent' AND embedding IS NOT NULL) "
+                "    AS parent_nonnull_emb "
                 "FROM rag_chunks WHERE corpus_run_id = :rid"
             ),
             {"rid": corpus_run_id},
