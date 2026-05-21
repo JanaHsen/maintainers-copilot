@@ -10,25 +10,22 @@ to boot with a single specific log line per mismatch type:
      mapping is part of the API contract and must not silently change.
   3. SHA-256 of ``state_dict.pt`` equals ``weights.weights_sha256`` from
      the model card (Day 1 contract C6, now enforced at boot).
-  4. The recomputed training-data hash equals ``data.training_data_hash``
-     from the model card. The algorithm mirrors the Colab notebook
-     exactly: ``sha256`` of
-     ``pd.util.hash_pandas_object(train_df[['issue_number',
-     'target_class']], index=False).values.tobytes()``. Cross-version
-     pandas hash stability isn't guaranteed; a mismatch here typically
-     means the dataset run id is wrong, the dataset has been regenerated,
-     or pandas major versions differ between Colab and the server.
+  4. SHA-256 of train.parquet bytes equals ``data.training_data_hash``
+     from the model card. Originally this used pandas'
+     ``hash_pandas_object`` on the row content to match the Colab notebook,
+     but that hash isn't stable across pandas major versions and the
+     serving image disagreed with Colab on the same bytes. File-bytes
+     SHA-256 catches every tamper of train.parquet and is
+     version-independent; ``data.training_data_hash`` is the SHA-256 of
+     the published parquet.
 """
 
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 from dataclasses import dataclass
 from typing import Any
-
-import pandas as pd
 
 from model_server.storage import ArtifactNotFoundError, ArtifactStorage
 
@@ -163,21 +160,18 @@ def _check_weights_sha(model_card: dict[str, Any], storage: ArtifactStorage) -> 
 
 
 def _compute_training_data_hash(train_parquet_bytes: bytes) -> str:
-    """Recompute the training-data hash exactly as the Colab notebook does.
+    """SHA-256 of the train.parquet file bytes.
 
-    The Colab notebook uses ``.values.tobytes()`` on the uint64 Series
-    returned by ``hash_pandas_object``; ``.to_numpy()`` produces the same
-    byte buffer for primitive dtypes and has a more precise static type.
+    Earlier this used ``pd.util.hash_pandas_object`` on the row content, to
+    match the Colab notebook. That hash is not stable across pandas major
+    versions — Colab and the serving image disagreed in CI, even on the
+    same parquet bytes. File-bytes SHA-256 is version-independent and
+    catches every tamper of train.parquet, which is what the check
+    actually needs to do. ``model_card.data.training_data_hash`` is the
+    SHA-256 of the published parquet bytes; if the parquet on MinIO
+    differs from the one used at training time, the boot refuses.
     """
-    df = pd.read_parquet(
-        io.BytesIO(train_parquet_bytes),
-        columns=["issue_number", "target_class"],
-    )
-    return hashlib.sha256(
-        pd.util.hash_pandas_object(
-            df[["issue_number", "target_class"]], index=False
-        ).to_numpy().tobytes()
-    ).hexdigest()
+    return hashlib.sha256(train_parquet_bytes).hexdigest()
 
 
 def _check_training_data_hash(

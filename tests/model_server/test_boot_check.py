@@ -35,9 +35,8 @@ WEIGHTS_SHA = hashlib.sha256(WEIGHTS).hexdigest()
 
 
 def _train_df() -> pd.DataFrame:
-    # Six rows is enough to make the pandas object hash deterministic;
-    # the test doesn't care what the hash value is, only that the same
-    # bytes hash to the same hex on both ends of verify.
+    # The bytes of the encoded parquet are what we hash; row content only
+    # affects which bytes the writer emits.
     return pd.DataFrame(
         {
             "issue_number": [1, 2, 3, 4, 5, 6],
@@ -52,12 +51,10 @@ def _train_parquet_bytes() -> bytes:
     return buf.getvalue()
 
 
-def _train_data_hash(df: pd.DataFrame) -> str:
-    return hashlib.sha256(
-        pd.util.hash_pandas_object(
-            df[["issue_number", "target_class"]], index=False
-        ).to_numpy().tobytes()
-    ).hexdigest()
+def _train_data_hash(_df: pd.DataFrame) -> str:
+    # boot_check uses file-bytes SHA-256 of the parquet itself, so the
+    # ground-truth hash here mirrors that.
+    return hashlib.sha256(_train_parquet_bytes()).hexdigest()
 
 
 def _well_formed_model_card() -> dict[str, Any]:
