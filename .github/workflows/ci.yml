@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync dependencies
+        # --group ml installs the model_server's torch + transformers stack
+        # so mypy and the model_server tests can run against the same surface
+        # the production image ships with.
+        run: uv sync --frozen --group ml
+
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          sed -i 's/^VAULT_DEV_ROOT_TOKEN_ID=.*/VAULT_DEV_ROOT_TOKEN_ID=ci-root-token/' .env
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy (app/ + model_server/)
+        run: uv run mypy
+
+      - name: Secret grep (no hardcoded secrets outside the secrets surface)
+        run: |
+          if grep -rEn 'sk-ant-|password' app/ model_server/ --include='*.py' \
+               --exclude=vault_client.py --exclude=log_redaction.py ; then
+            echo "::error::secret-shaped literal found in app/ or model_server/ outside the secrets adapter"
+            exit 1
+          fi
+          echo "secret-grep clean"
+
+      - name: Tests (redaction Rule 7, refuse-to-boot Rule 4, eval gate logic)
+        run: |
+          uv run pytest \
+            tests/infra/test_log_redaction.py \
+            tests/infra/test_refuse_to_boot.py \
+            tests/model_server/test_boot_check.py \
+            tests/evals/test_eval_classification.py \
+            -q
+
+      - name: Build image
+        run: docker compose build
+
+      - name: Start MinIO (target for the artifact seed)
+        # `docker compose up --wait` would be ideal but it returns non-zero
+        # when a one-shot service exits 0 (vault-seed does this on success),
+        # so we poll just for the minio healthcheck. Vault and the rest come
+        # up in the full-stack step below; their depends_on chain pulls
+        # vault-seed and model-server in the right order.
+        run: |
+          docker compose up -d minio
+          ok=""
+          for i in $(seq 1 30); do
+            h=$(docker compose ps minio --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::minio did not become healthy"
+            docker compose logs minio
+            exit 1
+          fi
+
+      - name: Seed classifier artifact for eval gate
+        # The model server's boot check refuses to boot without the artifact
+        # present in MinIO. CI's MinIO is empty on every run, so we pull the
+        # canonical run from a public GitHub Release and upload to the same
+        # keys before bringing model-server up. See
+        # scripts/ci/seed_classifier_artifact.sh and the release pinned by
+        # CLASSIFIER_RELEASE_TAG below.
+        env:
+          CLASSIFIER_RELEASE_TAG: classifier-v1-20260520T193153Z
+          MODEL_RUN_ID: 20260520T193153Z
+          DATASET_RUN_ID: 20260519T133455Z
+        run: bash scripts/ci/seed_classifier_artifact.sh
+
+      - name: Stack up — api + model-server + /health smoke
+        run: |
+          docker compose up -d
+          ok=""
+          for i in $(seq 1 60); do
+            h=$(docker compose ps api --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            s=$(docker compose ps -a api --format '{{.State}}' 2>/dev/null || true)
+            if [ "$s" = "exited" ]; then break; fi
+            sleep 5
+          done
+          docker compose ps -a
+          if [ -z "$ok" ]; then
+            echo "::error::api did not become healthy"
+            docker compose logs api migrate vault-seed model-server
+            docker compose down -v
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
+          echo "GET /health -> $code"
+          [ "$code" = "200" ] || { docker compose logs api; docker compose down -v; exit 1; }
+
+      - name: Wait for model-server healthy
+        # The eval gate calls /classify, so model-server must be up. Boot
+        # involves loading state_dict.pt and warming the tokenizer cache, so
+        # give it a bigger window than the api before declaring failure.
+        run: |
+          ok=""
+          for i in $(seq 1 90); do
+            h=$(docker compose ps model-server --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            s=$(docker compose ps -a model-server --format '{{.State}}' 2>/dev/null || true)
+            if [ "$s" = "exited" ]; then break; fi
+            sleep 5
+          done
+          docker compose ps -a
+          if [ -z "$ok" ]; then
+            echo "::error::model-server did not become healthy"
+            docker compose logs model-server
+            docker compose down -v
+            exit 1
+          fi
+
+      - name: Classifier eval gate (Rule 5 / Rule 10)
+        # Live DistilBERT inference over evals/classification/golden.jsonl
+        # via the model server's /classify endpoint. Writes the full report
+        # (macro_f1, per_class_f1, confusion_matrix, predictions) to MinIO
+        # at evals/reports/{ts}/classification.json and exits non-zero if
+        # macro-F1 falls below the floor in eval_thresholds.yaml.
+        env:
+          VAULT_ADDR: http://localhost:8200
+          MINIO_HOST: localhost
+        run: |
+          uv run python evals/classification/eval_classification.py \
+            --model-server-url http://localhost:8001
+
+      - name: Stack down
+        if: always()
+        run: docker compose down -v

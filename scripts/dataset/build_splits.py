@@ -1,0 +1,269 @@
+"""Build the stratified, time-ordered train/val/test split + report.
+
+Pipeline (research R4 / FR-016 / contracts C2-C5):
+
+  raw JSONL  -> apply label_map.yaml -> drop unmappable & PRs
+             -> sort by closed_at
+             -> test = most recent ~15% (STRICT time boundary; ties go to
+                test so train/val max < test min)
+             -> remaining 85% split train/val (~70/15 overall), stratified
+                by class
+             -> write {train,val,test}.parquet + splits_report.json under
+                processed/pandas/{run_id}/
+
+Usage::
+
+    MINIO_HOST=localhost uv run python scripts/dataset/build_splits.py --run-id <id>
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import os
+import random
+import sys
+from collections import defaultdict
+from datetime import datetime
+
+import pandas as pd
+import yaml
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from app.infra.minio_client import DATA_BUCKET, ensure_bucket, get_client  # noqa: E402
+
+SOURCE = "pandas-dev/pandas"
+LABEL_MAP_PATH = os.path.join(os.path.dirname(__file__), "label_map.yaml")
+TEST_FRACTION = 0.15
+VAL_FRACTION = 0.15
+SEED = 17
+
+
+def _load_label_map() -> tuple[list[str], dict[str, set[str]], bool]:
+    with open(LABEL_MAP_PATH, encoding="utf-8") as fh:
+        cfg = yaml.safe_load(fh)
+    precedence: list[str] = cfg["precedence"]
+    classes = {cls: set(names) for cls, names in cfg["classes"].items()}
+    return precedence, classes, bool(cfg["drop_if_unmapped"])
+
+
+def _target_class(
+    labels: list[str], precedence: list[str], classes: dict[str, set[str]]
+) -> str | None:
+    label_set = set(labels)
+    for cls in precedence:
+        if label_set & classes[cls]:
+            return cls
+    return None
+
+
+def _read_raw(run_id: str) -> list[dict[str, object]]:
+    s3 = get_client()
+    prefix = f"raw/pandas/issues/{run_id}/"
+    listed = s3.list_objects_v2(Bucket=DATA_BUCKET, Prefix=prefix)
+    keys = sorted(o["Key"] for o in listed.get("Contents", []) if o["Key"].endswith(".jsonl"))
+    if not keys:
+        raise SystemExit(f"no raw objects under s3://{DATA_BUCKET}/{prefix}")
+    issues: list[dict[str, object]] = []
+    for key in keys:
+        body = s3.get_object(Bucket=DATA_BUCKET, Key=key)["Body"].read()
+        for line in body.decode("utf-8").splitlines():
+            if line.strip():
+                issues.append(json.loads(line))
+    return issues
+
+
+def _parse_dt(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _map_records(
+    issues: list[dict[str, object]],
+    precedence: list[str],
+    classes: dict[str, set[str]],
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    """Map issues to records and account for everything excluded/ambiguous.
+
+    Precedence-based mapping is kept deliberately (NOT exclude-ambiguous).
+    ``multi_class_via_precedence`` records how many kept rows had labels
+    spanning >=2 classes (the precedence winner was kept) — that count is
+    the signal for whether the precedence choice needs revisiting.
+    """
+    records: list[dict[str, object]] = []
+    seen: set[int] = set()
+    exclusions = {
+        "pull_requests": 0,
+        "ci_bot_reports": 0,
+        "no_classifying_label": 0,
+        "multi_class_via_precedence": 0,
+    }
+    for issue in issues:
+        number = issue.get("number")
+        if not isinstance(number, int) or number in seen:
+            continue
+        seen.add(number)
+        if issue.get("pull_request") is not None:
+            exclusions["pull_requests"] += 1
+            continue  # PRs are not issues for this task
+        # ci_bot_reports stays 0 for pandas (no CI-bot title filter applies);
+        # the accounting key is kept for dataset-agnostic report shape.
+        if not issue.get("closed_at"):
+            continue
+        names = [
+            label["name"] if isinstance(label, dict) else str(label)
+            for label in issue.get("labels", [])
+        ]
+        label_set = set(names)
+        matched = [cls for cls in precedence if label_set & classes[cls]]
+        if not matched:
+            exclusions["no_classifying_label"] += 1
+            continue  # drop_if_unmapped
+        if len(matched) >= 2:
+            exclusions["multi_class_via_precedence"] += 1
+        records.append(
+            {
+                "issue_number": issue["number"],
+                "title": issue.get("title") or "",
+                "body": issue.get("body") or "",
+                "labels": names,
+                "target_class": matched[0],  # precedence winner
+                "closed_at": _parse_dt(str(issue["closed_at"])),
+            }
+        )
+    return records, exclusions
+
+
+def _assign_splits(records: list[dict[str, object]]) -> None:
+    records.sort(key=lambda r: r["closed_at"])
+    n = len(records)
+    if n == 0:
+        raise SystemExit("no mappable issues after applying label_map.yaml")
+
+    test_count = max(1, round(n * TEST_FRACTION))
+    boundary = records[n - test_count]["closed_at"]
+    # Ties at the boundary go to test so train/val max < test min (FR-016).
+    train_val = [r for r in records if r["closed_at"] < boundary]
+    test = [r for r in records if r["closed_at"] >= boundary]
+    for r in test:
+        r["split"] = "test"
+
+    rng = random.Random(SEED)
+    by_class: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for r in train_val:
+        by_class[str(r["target_class"])].append(r)
+
+    val_target = round(n * VAL_FRACTION)
+    val_quota = val_target / max(len(train_val), 1)
+    for _cls, rows in by_class.items():
+        rng.shuffle(rows)
+        k = round(len(rows) * val_quota)
+        for i, r in enumerate(rows):
+            r["split"] = "val" if i < k else "train"
+
+
+def _build_parquet_bytes(rows: list[dict[str, object]]) -> bytes:
+    """Serialize rows to a parquet byte buffer (same shape as the uploaded object)."""
+    frame = pd.DataFrame(rows)
+    if not frame.empty:
+        frame = frame.copy()
+        frame["closed_at"] = frame["closed_at"].astype(str)
+    buf = io.BytesIO()
+    frame.to_parquet(buf, index=False)
+    return buf.getvalue()
+
+
+def _report(
+    records: list[dict[str, object]],
+    run_id: str,
+    exclusions: dict[str, int],
+    training_data_hash: str,
+) -> dict[str, object]:
+    counts: dict[str, dict[str, int]] = {
+        s: defaultdict(int) for s in ("train", "val", "test")
+    }
+    for r in records:
+        counts[str(r["split"])][str(r["target_class"])] += 1
+    train_val_max = max(
+        r["closed_at"] for r in records if r["split"] != "test"
+    )
+    test_min = min(r["closed_at"] for r in records if r["split"] == "test")
+    return {
+        "run_id": run_id,
+        "source": SOURCE,
+        "total_mapped": len(records),
+        "counts": {s: dict(c) for s, c in counts.items()},
+        "time_boundary": {
+            "train_val_max_closed_at": train_val_max.isoformat(),
+            "test_min_closed_at": test_min.isoformat(),
+        },
+        "exclusions": exclusions,
+        # SHA-256 of the train.parquet bytes uploaded in this same run.
+        # The model server's boot check verifies this exact hash against
+        # train.parquet on every startup (see model_server/boot_check.py).
+        "training_data_sha256": training_data_hash,
+        "training_data_hash_algorithm": "sha256_of_parquet_bytes",
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build pandas issue splits")
+    parser.add_argument("--run-id", required=True, help="raw run_id to process")
+    args = parser.parse_args()
+
+    precedence, classes, _drop = _load_label_map()
+    issues = _read_raw(args.run_id)
+    records, exclusions = _map_records(issues, precedence, classes)
+    _assign_splits(records)
+
+    # Materialize each split's parquet bytes BEFORE the report so we can hash
+    # train.parquet exactly as the model_server boot check will at startup
+    # (file-bytes SHA-256 — parquet-version-stable, pandas-version-stable).
+    split_bytes: dict[str, bytes] = {}
+    for split in ("train", "val", "test"):
+        rows = [
+            {k: v for k, v in r.items() if k != "split"}
+            for r in records
+            if r["split"] == split
+        ]
+        split_bytes[split] = _build_parquet_bytes(rows)
+
+    training_data_hash = hashlib.sha256(split_bytes["train"]).hexdigest()
+    report = _report(records, args.run_id, exclusions, training_data_hash)
+
+    ensure_bucket(DATA_BUCKET)
+    s3 = get_client()
+    for split, body in split_bytes.items():
+        s3.put_object(
+            Bucket=DATA_BUCKET,
+            Key=f"processed/pandas/{args.run_id}/{split}.parquet",
+            Body=body,
+        )
+    s3.put_object(
+        Bucket=DATA_BUCKET,
+        Key=f"processed/pandas/{args.run_id}/splits_report.json",
+        Body=json.dumps(report, indent=2).encode("utf-8"),
+    )
+
+    total = report["total_mapped"]
+    summed = sum(
+        c for split in report["counts"].values() for c in split.values()  # type: ignore[union-attr]
+    )
+    print(f"total_mapped={total} sum_counts={summed} (must match)", flush=True)
+    print("exclusions:", json.dumps(exclusions, indent=2), flush=True)
+    mc = exclusions["multi_class_via_precedence"]
+    if total and mc / total > 0.20:
+        print(
+            f"NOTE: multi_class_via_precedence={mc} is "
+            f"{mc / total:.0%} of total_mapped (>20%) — operator may want to "
+            f"revisit the precedence vs exclude-ambiguous choice.",
+            flush=True,
+        )
+    print(json.dumps(report["time_boundary"], indent=2), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

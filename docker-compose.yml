@@ -1,0 +1,185 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev_postgres_password
+      POSTGRES_DB: maintainers_copilot
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maintainers_copilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: dev_minio_password
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vault:
+    # Pinned: `hashicorp/vault:latest` was re-tagged between Day 1's last
+    # green CI run and Day 2's first push, and the new image's entrypoint
+    # exits 126 in the GitHub Actions runner. 1.18 is the last known-good
+    # tag for our compose stanza.
+    image: hashicorp/vault:1.18
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_ADDR: "http://0.0.0.0:8200"
+      SKIP_SETCAP: "true"
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8200/v1/sys/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "${PHOENIX_PORT:-6006}:6006"
+      - "4317:4317"
+    # Phoenix ships a distroless image (no wget/curl/sh) but does include
+    # python, so the liveness probe is a python urllib call.
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6006')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: seed Vault kv-v2 before migrate/api boot so a clean
+  # `docker-compose up` reaches a healthy /health with no manual step
+  # (Rule 8). Reuses the same idempotent scripts/vault_seed.sh operators run.
+  vault-seed:
+    build: .
+    image: mcp-api:latest
+    command: ["bash", "/seed/vault_seed.sh"]
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      # Unset by default: vault_seed.sh then preserves any already-stored PAT
+      # instead of clobbering it. Operators export GITHUB_PAT for the dataset.
+      GITHUB_PAT: ${GITHUB_PAT:-}
+    volumes:
+      - ./scripts:/seed:ro
+    restart: "no"
+    depends_on:
+      vault:
+        condition: service_healthy
+
+  migrate:
+    build: .
+    image: mcp-api:latest
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      vault-seed:
+        condition: service_completed_successfully
+
+  api:
+    build: .
+    image: mcp-api:latest
+    env_file: .env
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      vault-seed:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Inference service: loads the Colab-trained DistilBERT classifier from
+  # MinIO and serves /classify, /ner, /summarize. Refuses to boot if the
+  # weights SHA-256, training-data hash, or compiled-in label2id don't match
+  # the published model_card.json (Rule 4 — see model_server/boot_check.py).
+  model-server:
+    build:
+      context: .
+      dockerfile: model_server/Dockerfile
+    image: mcp-model-server:latest
+    env_file: .env
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      MODEL_RUN_ID: ${MODEL_RUN_ID}
+      DATASET_RUN_ID: ${DATASET_RUN_ID}
+    ports:
+      - "${MODEL_SERVER_PORT:-8001}:8001"
+    depends_on:
+      vault:
+        condition: service_healthy
+      vault-seed:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      # Boot loads ~270MB of weights from MinIO and into a torch model on CPU;
+      # start_period gives that headroom before failed probes start counting
+      # against the retry budget.
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  chatbot:
+    image: scratch
+    profiles: ["later"]
+
+volumes:
+  pgdata:
+  miniodata:

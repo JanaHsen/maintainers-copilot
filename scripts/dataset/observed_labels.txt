@@ -1,0 +1,96 @@
+2111	Bug
+1374	Documentation
+1134	Easy
+873	Needs Triage
+739	New Feature
+694	help wanted
+551	Enhancement
+348	good first issue
+330	Build / CI
+200	Moderate
+161	Sprint
+155	API
+152	Blocker
+132	module:linear_model
+119	Question
+104	module:ensemble
+92	module:metrics
+86	Performance
+78	Needs Decision
+77	module:preprocessing
+76	Needs Decision - Close
+74	module:cluster
+72	module:model_selection
+65	Regression
+61	module:tree
+61	module:decomposition
+60	RFC
+56	module:test-suite
+53	Needs Investigation
+43	module:utils
+41	Needs Reproducible Code
+38	cython
+36	Needs Decision - Include Feature
+35	Needs Info
+32	Array API
+32	module:gaussian_process
+30	module:neighbors
+29	module:svm
+29	module:feature_selection
+28	spam
+27	module:feature_extraction
+26	module:datasets
+26	Meta-issue
+26	module:compose
+24	module:manifold
+23	module:neural_network
+17	module:inspection
+17	High Priority
+16	module:pipeline
+16	module:impute
+14	Developer API
+14	module:mixture
+14	Large Scale
+13	Hard
+13	pypy
+11	Needs Benchmarks
+11	Metadata Routing
+11	module:cross_decomposition
+11	module:calibration
+11	module:covariance
+10	Pandas compatibility
+10	module:naive_bayes
+9	frontend
+9	Closing candidate
+9	Numerical Stability
+9	arch:arm
+9	module:multioutput
+9	module:multiclass
+8	free-threading
+7	Callbacks
+7	Low Priority
+7	Packaging
+7	workflow
+7	module:semi_supervised
+6	Validation
+6	segfault
+6	Waiting for Reviewer
+5	float32
+5	OS:Windows
+5	wontfix
+5	module:base
+5	Breaking Change
+4	module:isotonic
+4	Refactor
+4	upstream bug
+3	OS:macOS
+3	module:random_projection
+2	autoclose
+2	module:kernel_approximation
+2	Stalled
+2	Needs work
+2	Move to scikit-learn-extra
+1	wasm
+1	module:discriminant_analysis
+1	good first PR to review
+1	C/C++

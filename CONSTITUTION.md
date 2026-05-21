@@ -1,36 +1,52 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR — two new principles added before any code was
-  written, bringing the constitution into full alignment with the Week 7
-  brief's CI scope and chatbot resilience requirements. No existing rule
-  was modified or removed.
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR — dataset reverted to pandas-dev/pandas after the
+  scikit-learn corpus produced only 4 question-class test samples
+  (16,926 → 4,787 mapped), insufficient for stable per-class F1
+  evaluation. Pandas canonical run_id 20260519T133455Z remains valid in
+  MinIO.
 
-Modified principles: None (Rules 1–9 unchanged)
-
-Added principles:
-  - X.  CI Discipline (Rule 10)
-  - XI. Resilient Tool Use (Rule 11)
+Modified principles: None (Rules 1–11 unchanged)
 
 Modified sections:
-  - Intro paragraph: "nine principles" → "eleven principles"
-  - Development Workflow & Quality Gates: added Rule 10 and Rule 11 gates
-  - Governance / Compliance review: "Rules 1–9" → "Rules 1–11"
+  - Project Scope: binding dataset source `scikit-learn/scikit-learn`
+      → `pandas-dev/pandas` (revert)
 
 Removed sections: None
 
 Templates requiring updates:
-  - .specify/templates/plan-template.md       ✅ aligned (Constitution
-      Check gate now scopes Rules 1–11; populated per-feature)
+  - .specify/templates/plan-template.md       ✅ aligned (no rule change)
   - .specify/templates/spec-template.md       ✅ aligned (no change)
-  - .specify/templates/tasks-template.md      ✅ aligned (/speckit.tasks
-      must now also emit Rule-10- and Rule-11-tagged tasks where relevant)
+  - .specify/templates/tasks-template.md      ✅ aligned (no change)
   - .specify/templates/checklist-template.md  ✅ aligned (no change)
 
-Follow-up TODOs: None. All placeholders resolved.
+Follow-up TODOs: None.
 
 Previous report (kept for history):
+  Version change: 1.1.0 → 1.2.0
+  Bump rationale: MINOR — dataset source changed before Day 2 work begins;
+    pandas fetch artifacts in MinIO superseded but retained for audit.
+  Modified sections:
+    - Project Scope: binding dataset source `pandas-dev/pandas`
+        → `scikit-learn/scikit-learn`
+
+  Version change: 1.0.0 → 1.1.0
+  Bump rationale: MINOR — two new principles added before any code was
+    written, bringing the constitution into full alignment with the Week 7
+    brief's CI scope and chatbot resilience requirements. No existing rule
+    was modified or removed.
+  Modified principles: None (Rules 1–9 unchanged)
+  Added principles:
+    - X.  CI Discipline (Rule 10)
+    - XI. Resilient Tool Use (Rule 11)
+  Modified sections:
+    - Intro paragraph: "nine principles" → "eleven principles"
+    - Development Workflow & Quality Gates: added Rule 10 and Rule 11 gates
+    - Governance / Compliance review: "Rules 1–9" → "Rules 1–11"
+  Removed sections: None
+
   Version change: (none) → 1.0.0
   Bump rationale: Initial ratification of the project constitution.
 -->
@@ -229,4 +245,4 @@ compliance with Rules 1–11 before Phase 0 and again after design. Any
 justified deviation MUST be recorded in the plan's Complexity Tracking table;
 unjustified deviations block the work.
 
-**Version**: 1.1.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-18
+**Version**: 1.3.0 | **Ratified**: 2026-05-18 | **Last Amended**: 2026-05-19
