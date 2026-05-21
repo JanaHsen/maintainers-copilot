@@ -168,9 +168,13 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      # Boot loads ~270MB of weights from MinIO and into a torch model on CPU;
+      # start_period gives that headroom before failed probes start counting
+      # against the retry budget.
+      start_period: 60s
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 18
 
   chatbot:
     image: scratch

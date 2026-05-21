@@ -51,7 +51,24 @@ jobs:
       - name: Build image
         run: docker compose build
 
-      - name: Stack up + /health smoke
+      - name: Stack up — infra (MinIO + Vault first so we can seed before model-server boots)
+        run: |
+          docker compose up -d --wait postgres redis minio vault phoenix vault-seed
+
+      - name: Seed classifier artifact for eval gate
+        # The model server's boot check refuses to boot without the artifact
+        # present in MinIO. CI's MinIO is empty on every run, so we pull the
+        # canonical run from a public GitHub Release and upload to the same
+        # keys before bringing model-server up. See
+        # scripts/ci/seed_classifier_artifact.sh and the release pinned by
+        # CLASSIFIER_RELEASE_TAG below.
+        env:
+          CLASSIFIER_RELEASE_TAG: classifier-v1-20260520T193153Z
+          MODEL_RUN_ID: 20260520T193153Z
+          DATASET_RUN_ID: 20260519T133455Z
+        run: bash scripts/ci/seed_classifier_artifact.sh
+
+      - name: Stack up — api + model-server + /health smoke
         run: |
           docker compose up -d
           ok=""
@@ -65,13 +82,34 @@ jobs:
           docker compose ps -a
           if [ -z "$ok" ]; then
             echo "::error::api did not become healthy"
-            docker compose logs api migrate vault-seed
+            docker compose logs api migrate vault-seed model-server
             docker compose down -v
             exit 1
           fi
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
           echo "GET /health -> $code"
           [ "$code" = "200" ] || { docker compose logs api; docker compose down -v; exit 1; }
+
+      - name: Wait for model-server healthy
+        # The eval gate calls /classify, so model-server must be up. Boot
+        # involves loading state_dict.pt and warming the tokenizer cache, so
+        # give it a bigger window than the api before declaring failure.
+        run: |
+          ok=""
+          for i in $(seq 1 90); do
+            h=$(docker compose ps model-server --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            s=$(docker compose ps -a model-server --format '{{.State}}' 2>/dev/null || true)
+            if [ "$s" = "exited" ]; then break; fi
+            sleep 5
+          done
+          docker compose ps -a
+          if [ -z "$ok" ]; then
+            echo "::error::model-server did not become healthy"
+            docker compose logs model-server
+            docker compose down -v
+            exit 1
+          fi
 
       - name: Classifier eval gate (Rule 5 / Rule 10)
         # Live DistilBERT inference over evals/classification/golden.jsonl
