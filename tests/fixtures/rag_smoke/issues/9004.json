@@ -1,0 +1,18 @@
+{
+  "number": 9004,
+  "title": "Feature request: add a `df.tail_until(...)` method symmetric to head",
+  "body": "I'd like to grab all rows from the end of a DataFrame until a predicate becomes false. There's no built-in for this; I currently do `df.iloc[::-1][predicate].iloc[::-1]` which works but is ugly. Could we add `df.tail_until(predicate)` as a convenience?",
+  "closedAt": "2024-11-03T20:11:00Z",
+  "comments": [
+    {
+      "body": "I'd use this too if it existed.",
+      "createdAt": "2024-11-04T08:01:00Z",
+      "authorAssociation": "CONTRIBUTOR"
+    },
+    {
+      "body": "FWIW the pattern works fine, why not just `df[df.iloc[::-1][predicate].iloc[::-1].index]`?",
+      "createdAt": "2024-11-04T09:14:00Z",
+      "authorAssociation": "NONE"
+    }
+  ]
+}
