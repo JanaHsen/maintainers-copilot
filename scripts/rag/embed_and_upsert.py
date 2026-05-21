@@ -33,17 +33,38 @@ EMBEDDING_MODEL_ID = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
 DEFAULT_BATCH_SIZE = 64
 
-INSERT_SQL = text(
+# Parents and children get separate INSERT statements: parent rows
+# always have NULL embedding, child rows always have a literal vector.
+# A single statement with CASE WHEN on the embedding parameter trips
+# Postgres' type inference (`could not determine data type of parameter`),
+# so we keep them disjoint.
+
+_INSERT_COLUMNS = (
+    "id, kind, parent_id, content, embedding, "
+    "source_type, source_id, source_timestamp, "
+    "section_path, child_index, parent_index, corpus_run_id"
+)
+
+INSERT_PARENT_SQL = text(
+    f"""
+    INSERT INTO rag_chunks ({_INSERT_COLUMNS})
+    VALUES (
+      :id, 'parent', :parent_id, :content, NULL,
+      :source_type, :source_id, :source_timestamp,
+      :section_path, :child_index, :parent_index, :corpus_run_id
+    )
+    ON CONFLICT (id) DO NOTHING
     """
-    INSERT INTO rag_chunks
-      (id, kind, parent_id, content, embedding,
-       source_type, source_id, source_timestamp,
-       section_path, child_index, parent_index, corpus_run_id)
-    VALUES
-      (:id, :kind, :parent_id, :content,
-       CASE WHEN :embedding_str IS NULL THEN NULL ELSE :embedding_str::vector END,
-       :source_type, :source_id, :source_timestamp,
-       :section_path, :child_index, :parent_index, :corpus_run_id)
+)
+
+INSERT_CHILD_SQL = text(
+    f"""
+    INSERT INTO rag_chunks ({_INSERT_COLUMNS})
+    VALUES (
+      :id, 'child', :parent_id, :content, CAST(:embedding_str AS vector),
+      :source_type, :source_id, :source_timestamp,
+      :section_path, :child_index, :parent_index, :corpus_run_id
+    )
     ON CONFLICT (id) DO NOTHING
     """
 )
@@ -112,10 +133,8 @@ def upsert(parents: list[ParentChunk], embedder: Embedder | None = None) -> dict
         parent_rows.append(
             {
                 "id": parent.id,
-                "kind": "parent",
                 "parent_id": parent.id,
                 "content": parent.content,
-                "embedding_str": None,
                 "source_type": parent.source_type,
                 "source_id": parent.source_id,
                 "source_timestamp": parent.source_timestamp,
@@ -129,7 +148,6 @@ def upsert(parents: list[ParentChunk], embedder: Embedder | None = None) -> dict
             child_rows.append(
                 {
                     "id": child.id,
-                    "kind": "child",
                     "parent_id": child.parent_id,
                     "content": child.content,
                     "embedding_str": _vec_to_pg_str(embedding_by_child[child.id]),
@@ -147,8 +165,8 @@ def upsert(parents: list[ParentChunk], embedder: Embedder | None = None) -> dict
     with engine.begin() as conn:
         # SQLAlchemy returns rowcount as the number of rows actually touched;
         # with ON CONFLICT DO NOTHING that's the number of *new* rows inserted.
-        parent_result = conn.execute(INSERT_SQL, parent_rows) if parent_rows else None
-        child_result = conn.execute(INSERT_SQL, child_rows) if child_rows else None
+        parent_result = conn.execute(INSERT_PARENT_SQL, parent_rows) if parent_rows else None
+        child_result = conn.execute(INSERT_CHILD_SQL, child_rows) if child_rows else None
     parents_inserted = parent_result.rowcount if parent_result is not None else 0
     children_inserted = child_result.rowcount if child_result is not None else 0
     return {
