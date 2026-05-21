@@ -36,9 +36,13 @@ from model_server.boot_check import (
     WeightsMissingError,
     verify_artifacts,
 )
+from model_server.embed import EmbeddingModelLoadError, load_embedder
 from model_server.inference import StateDictLoadError, load_model
+from model_server.rerank import RerankerModelLoadError, load_reranker
 from model_server.routers.classify import router as classify_router
+from model_server.routers.embed import router as embed_router
 from model_server.routers.ner import router as ner_router
+from model_server.routers.rerank import router as rerank_router
 from model_server.routers.summarize import router as summarize_router
 from model_server.storage import ArtifactStorage, get_storage
 from model_server.tracing import setup_tracing, shutdown_tracing
@@ -62,6 +66,8 @@ _REFUSE_TO_BOOT_LINES: dict[type[Exception], str] = {
     TrainParquetMissingError: "REFUSE TO BOOT: train.parquet missing",
     TrainingDataHashMismatchError: "REFUSE TO BOOT: training_data_hash mismatch",
     StateDictLoadError: "REFUSE TO BOOT: state_dict.pt failed to load into model",
+    EmbeddingModelLoadError: "REFUSE TO BOOT: embedding model failed to load",
+    RerankerModelLoadError: "REFUSE TO BOOT: cross-encoder failed to load",
 }
 
 
@@ -91,6 +97,29 @@ def run_boot_check(storage: ArtifactStorage) -> None:
     state.set_model(loaded)
     logger.info("model loaded; ready to serve /classify")
 
+    # RAG: embedding model + cross-encoder. Both are refuse-to-boot on
+    # load failure — shipping /retrieve without one of them would silently
+    # break the eval gate's assumptions.
+    try:
+        embedder = load_embedder()
+    except EmbeddingModelLoadError as exc:
+        logger.critical(
+            "%s: %s", _REFUSE_TO_BOOT_LINES[EmbeddingModelLoadError], exc
+        )
+        raise
+    state.set_embedder(embedder)
+    logger.info("embedder loaded; ready to serve /embed")
+
+    try:
+        reranker = load_reranker()
+    except RerankerModelLoadError as exc:
+        logger.critical(
+            "%s: %s", _REFUSE_TO_BOOT_LINES[RerankerModelLoadError], exc
+        )
+        raise
+    state.set_reranker(reranker)
+    logger.info("cross-encoder loaded; ready to serve /rerank")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -117,6 +146,8 @@ setup_tracing(app)
 app.include_router(classify_router)
 app.include_router(ner_router)
 app.include_router(summarize_router)
+app.include_router(embed_router)
+app.include_router(rerank_router)
 
 
 @app.get("/health")
