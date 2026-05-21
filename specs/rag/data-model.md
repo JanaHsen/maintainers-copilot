@@ -16,9 +16,9 @@ child and parent variants, distinguished by `kind`. Parent rows have
 | `kind`              | `text NOT NULL`               | `'child'` or `'parent'`. |
 | `parent_id`         | `text NOT NULL`               | For `kind='parent'`, equals `id`. For `kind='child'`, references the parent's `id`. |
 | `content`           | `text NOT NULL`               | The chunk text. ≈400 chars for child, ≈2000 for parent. |
-| `embedding`         | `vector(384) NULL`            | Populated for `kind='child'` only. NULL for `kind='parent'`. Dimension committed at migration time per R12. |
+| `embedding`         | `vector(768) NULL`            | Populated for `kind='child'` only. NULL for `kind='parent'`. Dimension fixed at 768 to match `BAAI/bge-base-en-v1.5` (see research.md R12). |
 | `source_type`       | `text NOT NULL`               | `'docs'` or `'issues'`. |
-| `source_id`         | `text NOT NULL`               | For `docs`: relative file path (e.g. `docs/user_guide/10min.rst`). For `issues`: `issue_number` as a string. |
+| `source_id`         | `text NOT NULL`               | For `docs`: relative file path inside the pandas repo (e.g. `doc/source/user_guide/10min.rst`). For `issues`: `issue_number` as a string. |
 | `source_timestamp`  | `timestamptz NOT NULL`        | For `docs`: the file's last-commit timestamp. For `issues`: the issue's `closed_at`. |
 | `section_path`      | `text NOT NULL`               | Header path inside the source (e.g. `Intro to data structures > Series`). Empty string allowed. |
 | `child_index`       | `int NOT NULL`                | 0-indexed position of the child inside its parent. 0 for parent rows. |
@@ -68,8 +68,8 @@ new `corpus_run_id`; rows from prior runs are not modified.
 {
   "corpus_run_id": "20260521T1530Z",
   "dataset_run_id": "20260519T133455Z",
-  "embedding_model_id": "BAAI/bge-small-en-v1.5",
-  "embedding_dim": 384,
+  "embedding_model_id": "BAAI/bge-base-en-v1.5",
+  "embedding_dim": 768,
   "chunking": {
     "child_chars": 400,
     "parent_chars": 2000,
@@ -102,7 +102,7 @@ new `corpus_run_id`; rows from prior runs are not modified.
   "run_ts": "20260522T0930Z",
   "corpus_run_id": "20260521T1530Z",
   "pipeline_config": {
-    "embedding_model_id": "BAAI/bge-small-en-v1.5",
+    "embedding_model_id": "BAAI/bge-base-en-v1.5",
     "cross_encoder_id": "cross-encoder/ms-marco-MiniLM-L-6-v2",
     "hyde_enabled": true,
     "hyde_prompt_path": "prompts/hyde.md",
@@ -179,7 +179,7 @@ Frozen naive-baseline numbers, committed to the repo:
 {
   "corpus_run_id": "20260521T1530Z",
   "pipeline_config": {
-    "embedding_model_id": "BAAI/bge-small-en-v1.5",
+    "embedding_model_id": "BAAI/bge-base-en-v1.5",
     "cross_encoder_id": null,
     "hyde_enabled": false,
     "hybrid_alpha": 1.0,

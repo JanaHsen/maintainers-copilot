@@ -65,12 +65,29 @@ chars) as the chunk surfaced to the caller.
 **Defended in DECISIONS.md** under "RAG parent-chunk aggregation"
 with the alternatives explicitly compared.
 
-## R3 — Embedding + cross-encoder hosting: in the existing model server
+## R3 — Embedding + cross-encoder hosting: in the existing model server (online only)
 
 **Decision**: Both the embedding model and the cross-encoder load
 inside `model_server` at boot, alongside DistilBERT. The api calls
 `http://model-server:8001/embed` and `http://model-server:8001/rerank`
 over the existing httpx transport from `app/infra/model_server_client.py`.
+
+**Scope clarification — the `/embed` endpoint is online-query only.**
+The offline corpus build under `scripts/rag/` loads
+`BAAI/bge-base-en-v1.5` in-process via `sentence-transformers` and
+batches embedding directly; it does **not** call `/embed`. Two
+consumers, two paths, same model:
+
+| consumer                              | path                                   | shape |
+|---------------------------------------|----------------------------------------|-------|
+| `scripts/rag/embed_and_upsert.py`     | sentence-transformers in-process       | tens of thousands of chunks, batched, offline |
+| `app/services/retrieve_service.py`    | HTTP to `model_server` `/embed`        | one (HyDE-transformed) query per request, online |
+
+Rationale: the offline path doesn't pay for a network hop per batch,
+runs on whichever host the operator schedules it from, and keeps the
+model server's request budget free for live `/retrieve` traffic.
+The online path stays thin (one HTTP call per query) and reuses the
+existing typed-error family for free Rule-11 mapping.
 
 **Rationale** (per user input #1 — extends the DistilBERT isolation
 pattern):
@@ -200,32 +217,35 @@ gives both: same input → same ID; any content drift → different ID
   reshuffle IDs and break the golden set's references.
 - UUIDv4 random. Rejected: same.
 
-## R8 — Operator-deferred decisions (stop and ask after baseline)
+## R8 — Decisions committed at task generation (no longer deferred)
 
-Per user input #6, three choices are explicit "stop and ask" gates,
-not Phase-0 unknowns. They surface to the operator after the corpus
-build is wired and the naive baseline has run:
+The three originally-deferred choices were collapsed into firm
+commitments by the task-generation prompt. They're captured here so
+research.md and the task list agree:
 
-- **Embedding model**. Candidates: `BAAI/bge-small-en-v1.5` (384d) —
-  MIT, fast on CPU, strong on retrieval benchmarks; or
-  `intfloat/e5-small-v2` (384d) — also strong, slightly different
-  prompt convention. The pgvector column dimension is committed at
-  migration time based on this choice.
-- **Cross-encoder**. Default candidate:
-  `cross-encoder/ms-marco-MiniLM-L-6-v2` (per spec). The
-  cross-encoder runs locally inside `model_server`; refusal to load
-  is a refuse-to-boot.
-- **Generation judge**. RAGAS (no per-question Anthropic spend, but a
-  bigger dep tree and its own opinionated metrics) vs. a frozen
-  Claude Haiku judge over a committed `prompts/rag_judge.md`. The
-  Claude judge reuses the existing Anthropic key from Vault; RAGAS
-  needs no new secret.
+- **Embedding model**: `BAAI/bge-base-en-v1.5` (768d) — strong on
+  MTEB, MIT, runs on CPU. Used in two places with the same weights:
+  `scripts/rag/` calls `sentence-transformers` in-process for offline
+  bulk corpus embedding (see R3); `model_server` `/embed` serves
+  online single-query embedding for `/retrieve` (see R4). Refusal
+  to load is a refuse-to-boot for `model_server` (per task T014).
+- **Cross-encoder**: `cross-encoder/ms-marco-MiniLM-L-6-v2`, loaded
+  inside `model_server` at boot (per task T015). Refusal to load is
+  a refuse-to-boot.
+- **Generation judge**: frozen Claude Haiku via the existing
+  `app/infra/anthropic_client.py`. Judge prompt at
+  `prompts/rag_judge.md` (per task T035 — version-controlled,
+  Rule 9). The Claude judge reuses the Anthropic key already in
+  Vault.
 
-The naive baseline reveals **whether HyDE, hybrid weighting,
-parent-document chunking, and cross-encoder rerank each pull their
-weight** in our regime. The model and judge picks are conditioned
-on that data — if e.g. dense-only retrieval already saturates the
-golden set, picking a more expensive cross-encoder is waste.
+The two **genuine remaining operator-decisions** live inside the
+eval phase, not at planning:
+
+- **5 hand-labeled golden examples** (task T027) — operator labels
+  them personally per FR-022.
+- **`eval_thresholds.yaml` `rag:` floors** (task T037) — set after
+  the advanced-pipeline numbers are visible, with a 5pt buffer
+  below observed.
 
 ## R9 — Hybrid α tuning, not hand-picking
 
@@ -267,10 +287,9 @@ network bytes than 30 single-pair calls.
 ## R12 — Embedding dimension committed at migration time
 
 **Decision**: The `0002_rag_chunks.py` migration commits to
-**`vector(384)`** if the operator picks `bge-small-en-v1.5` or
-`e5-small-v2` (both 384d). If the operator chooses a different model
-later, a new migration replaces the column type — this is normal
-under Rule 3.
+**`vector(768)`** to match `BAAI/bge-base-en-v1.5` (R8). If the
+operator later swaps to a different-dim model, a new migration
+replaces the column type — this is normal under Rule 3.
 
 **Rationale**: pgvector requires a fixed dimension at column-creation
 time. We accept that "embedding model swap = migration" because (a)

@@ -18,7 +18,7 @@ production-shaped state without printing what it's about to do first.
 
 ```bash
 docker compose run --rm migrate
-# applies alembic 0002_rag_chunks: rag_chunks table + indices (R12 commits to vector(384))
+# applies alembic 0002_rag_chunks: rag_chunks table + indices (vector(768) for BAAI/bge-base-en-v1.5)
 ```
 
 ## 2. Build the corpus
@@ -36,9 +36,10 @@ What the script does, in order:
 
 1. Verifies `processed/pandas/20260519T133455Z/{train,val,test}.parquet`
    exists in MinIO. Refuses to start otherwise.
-2. Fetches the pandas repo at `PANDAS_REPO_REF` (sparse-checkout: just
-   `README.md`, `CONTRIBUTING.md`, and the `docs/` tree). Counts
-   skipped code-only files (FR-007).
+2. Fetches the pandas repo at `PANDAS_REPO_REF` (shallow + sparse-checkout
+   covering `README.md`, `CONTRIBUTING.md`, and `doc/source/**/*.rst`;
+   the clone is cached under `~/.cache/maintainers-copilot/pandas-repo/`
+   so re-runs reuse it). Counts skipped code-only files (FR-007).
 3. Fetches resolved issues with maintainer comments via GraphQL,
    excluding every `issue_number` present in the three classifier
    splits. Writes the excluded set to `excluded_issue_numbers.txt` —

@@ -26,7 +26,7 @@ report to MinIO at `evals/reports/{run_ts}/rag.json` (Rules 5, 10).
 **Primary Dependencies**:
 - `app/` (RAG additions): FastAPI, SQLAlchemy 2.x + asyncpg / psycopg, Pydantic v2, httpx (reusing the existing `app/infra/model_server_client.py` transport), OpenTelemetry instrumentation.
 - `model_server/` (RAG additions): `sentence-transformers` for the cross-encoder (`ms-marco-MiniLM-L-6-v2` default — operator-confirmable, see "Operator-deferred decisions" below), the embedding model (operator-confirmable), running on the existing torch + transformers stack pinned in the `ml` dependency group.
-- `scripts/rag/` (corpus build): `httpx` + GraphQL for the pandas issue + comment fetch, `markdown-it-py` + `docutils`/`rst-to-text` for `docs/` prose extraction, the embedding model via the model server's `/embed` endpoint (no direct torch dep in scripts/).
+- `scripts/rag/` (corpus build): `httpx` + GraphQL for the pandas issue + comment fetch, `markdown-it-py` + `docutils`/`rst-to-text` for `doc/source/` RST prose extraction. **Embedding runs in-process via `sentence-transformers` loading `BAAI/bge-base-en-v1.5` directly — the corpus build does NOT call the model server's `/embed` endpoint.** Two distinct embedding paths by design: bulk offline embedding in `scripts/rag/` (sentence-transformers in-process), single-query online embedding via `model_server` `/embed` for the api's `/retrieve` (HyDE-transformed query). Same model, same weights, two consumers with different latency/throughput shapes.
 - pgvector extension already provisioned by `alembic/versions/0001_baseline.py`.
 
 **Storage**:
@@ -49,13 +49,33 @@ report to MinIO at `evals/reports/{run_ts}/rag.json` (Rules 5, 10).
 
 **Scale/Scope**:
 - Corpus chunk count: low tens of thousands (pandas docs ~few-hundred prose files, held-out issues ~10k after split-exclusion).
-- pgvector embedding dimension: per the chosen model (operator decision; the table is parameterized to make a swap a migration, not a schema rebuild).
+- pgvector embedding dimension: **768**, committed in the
+  `0002_rag_chunks` migration to match `BAAI/bge-base-en-v1.5`. An
+  embedding-model swap to a different dimension is a new migration
+  (normal under Rule 3).
 
-**Operator-deferred decisions** (recorded here so they don't masquerade as "NEEDS CLARIFICATION" — these are explicit "stop and ask" gates per user input #6):
+**Decided up-front** (no longer "operator-deferred" — committed by the
+task-generation prompt, see `tasks.md` T001 / T014 / T015 / T035):
 
-1. **Embedding model choice**. Default candidates: `BAAI/bge-small-en-v1.5` (384d, MIT-licensed, fast on CPU) or `intfloat/e5-small-v2`. Decided after the corpus build is wired and the naive baseline has run.
-2. **Cross-encoder choice**. Default candidate: `cross-encoder/ms-marco-MiniLM-L-6-v2` (local, free, fast). Decided after baseline numbers visible.
-3. **Generation judge choice**. RAGAS (no LLM dependency for judging but its own dep weight) vs. a frozen Claude Haiku judge over a committed `prompts/rag_judge.md`. Decided alongside #1/#2.
+1. **Embedding model**: `BAAI/bge-base-en-v1.5` (768d). Used in two
+   places with the same weights: `scripts/rag/` calls
+   `sentence-transformers` in-process for offline bulk corpus
+   embedding; `model_server` `/embed` serves online single-query
+   embedding for `/retrieve`'s HyDE-transformed query.
+2. **Cross-encoder**: `cross-encoder/ms-marco-MiniLM-L-6-v2`, loaded
+   inside `model_server` at boot. Refusal to load is a refuse-to-boot.
+3. **Generation judge**: frozen Claude Haiku via the existing
+   `app/infra/anthropic_client.py`. Judge prompt at
+   `prompts/rag_judge.md` (version-controlled per Rule 9).
+
+The remaining genuine operator-decisions surface inside the eval
+phase, not at planning:
+
+- **5 hand-labeled golden examples** (T027) — operator labels them
+  personally per FR-022.
+- **`eval_thresholds.yaml` `rag:` floors** (T037) — operator picks
+  them after the advanced-pipeline numbers are visible (5pt buffer
+  below observed).
 
 ## Constitution Check
 
@@ -148,7 +168,7 @@ alembic/versions/0002_rag_chunks.py    # rag_chunks (id, parent_id, content, emb
 
 scripts/rag/
 ├── build_corpus.py                # orchestrator: docs + issues → chunks → embed → upsert
-├── fetch_docs.py                  # README + contributing + docs/ prose; skips code-only files
+├── fetch_docs.py                  # README + CONTRIBUTING + doc/source/**/*.rst prose; skips code-only files; caches the sparse-checkout under ~/.cache/maintainers-copilot/pandas-repo/
 ├── fetch_issues_held_out.py       # GraphQL issues + comments, excluding classifier-split issue_numbers
 ├── chunk_parent_document.py       # ≈400-char child / ≈2000-char parent with shared parent_id
 ├── chunk_naive.py                 # naive fixed-≈400-char baseline (FR-019)

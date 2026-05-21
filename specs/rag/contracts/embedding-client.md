@@ -4,6 +4,15 @@
 httpx transport (`app/infra/model_server_client.py`). Same typed-error
 family as `/classify` (Rule 11 — see R4 in research.md).
 
+## Scope — online query embedding only
+
+This endpoint serves the api's per-request query embedding (the
+HyDE-transformed maintainer question) and nothing else. The **offline
+corpus build** under `scripts/rag/` does NOT call `/embed`; it loads
+`BAAI/bge-base-en-v1.5` in-process via `sentence-transformers` and
+batches the embedding directly. See `research.md` R3 for the
+two-consumers-one-model design.
+
 ## Request
 
 `POST {MODEL_SERVER_URL}/embed`
@@ -21,31 +30,17 @@ Body:
 }
 ```
 
-The corpus build calls this endpoint too, with batch shape:
-
-```json
-{
-  "texts": ["s1", "s2", ...]
-}
-```
+A batch variant exists for forward-compat (`{ "texts": [...] }` →
+`{ "embeddings": [...] }`) but the corpus build does NOT use it;
+online callers only.
 
 ## Response — 200
 
 ```json
 {
   "embedding": [/* float[D] */],
-  "model_id": "BAAI/bge-small-en-v1.5",
-  "dim": 384
-}
-```
-
-Batch variant:
-
-```json
-{
-  "embeddings": [[/* float[D] */], ...],
-  "model_id": "BAAI/bge-small-en-v1.5",
-  "dim": 384
+  "model_id": "BAAI/bge-base-en-v1.5",
+  "dim": 768
 }
 ```
 
