@@ -140,6 +140,24 @@ jobs:
           uv run python evals/classification/eval_classification.py \
             --model-server-url http://localhost:8001
 
+      - name: RAG corpus-build smoke (US2)
+        # End-to-end run of the corpus pipeline against the 5-doc / 5-issue
+        # smoke fixture. Verifies sparse-checkout-less fixture mode + the
+        # maintainer-association filter (9004 dropped) + chunker +
+        # sentence-transformers embed + bulk INSERT into rag_chunks +
+        # corpus_report.json upload. Target: under 30s after the model
+        # is in cache.
+        env:
+          VAULT_ADDR: http://localhost:8200
+          MINIO_HOST: localhost
+          POSTGRES_HOST: localhost
+        run: |
+          uv run python scripts/rag/build_corpus.py \
+            --dataset-run-id 20260519T133455Z \
+            --strategy parent_document \
+            --fixture tests/fixtures/rag_smoke \
+            --corpus-run-id ci-smoke-${{ github.run_id }}
+
       - name: Stack down
         if: always()
         run: docker compose down -v
