@@ -51,9 +51,25 @@ jobs:
       - name: Build image
         run: docker compose build
 
-      - name: Stack up — infra (MinIO + Vault first so we can seed before model-server boots)
+      - name: Start MinIO (target for the artifact seed)
+        # `docker compose up --wait` would be ideal but it returns non-zero
+        # when a one-shot service exits 0 (vault-seed does this on success),
+        # so we poll just for the minio healthcheck. Vault and the rest come
+        # up in the full-stack step below; their depends_on chain pulls
+        # vault-seed and model-server in the right order.
         run: |
-          docker compose up -d --wait postgres redis minio vault phoenix vault-seed
+          docker compose up -d minio
+          ok=""
+          for i in $(seq 1 30); do
+            h=$(docker compose ps minio --format '{{.Health}}' 2>/dev/null || true)
+            if [ "$h" = "healthy" ]; then ok="yes"; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::minio did not become healthy"
+            docker compose logs minio
+            exit 1
+          fi
 
       - name: Seed classifier artifact for eval gate
         # The model server's boot check refuses to boot without the artifact
