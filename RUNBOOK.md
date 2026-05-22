@@ -29,11 +29,29 @@ Open Phoenix at `http://localhost:6006` to see the request span tree.
 ### Degraded / refuse-to-boot demos
 
 ```bash
-docker-compose stop redis    # /health -> 200, status "degraded", redis unreachable
-docker-compose start redis
+# Vault unreachable -> REFUSE TO BOOT: Vault dependency failed
 docker-compose stop vault && docker-compose restart api
 docker-compose logs --tail=20 api   # one "REFUSE TO BOOT: Vault ..." line; api exits non-zero
 docker-compose start vault && docker-compose restart api
+
+# Vault missing auth_jwt_secret -> REFUSE TO BOOT (T039)
+# Wipe the key, restart api, restore via vault_seed.sh.
+docker-compose exec vault vault kv patch secret/maintainers-copilot auth_jwt_secret=
+docker-compose restart api
+docker-compose logs --tail=20 api   # "REFUSE TO BOOT: Vault dependency failed: missing required Vault key(s): auth_jwt_secret"
+bash scripts/vault_seed.sh && docker-compose restart api
+
+# Redis unreachable -> REFUSE TO BOOT (T040 — was 'degraded' pre-Part-1)
+docker-compose stop redis && docker-compose restart api
+docker-compose logs --tail=20 api   # "REFUSE TO BOOT: Redis dependency failed: ..."
+docker-compose start redis && docker-compose restart api
+
+# Chatbot tables missing -> REFUSE TO BOOT (T041)
+# Roll the migration back one step; restart api; roll forward to recover.
+docker-compose exec api alembic downgrade -1   # drops migration 0003 (chatbot tables)
+docker-compose restart api
+docker-compose logs --tail=20 api   # "REFUSE TO BOOT: users table missing: ..."
+docker-compose exec api alembic upgrade head && docker-compose restart api
 ```
 
 ## Tear down
