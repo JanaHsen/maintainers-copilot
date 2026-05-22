@@ -47,11 +47,13 @@ def _configure_logging() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Bootstrap dependencies in order; refuse to boot on a fatal failure.
 
-    Order: Vault -> DB -> Redis -> MinIO -> tracing. A failure of Vault, a
-    required Vault key, Postgres, or MinIO is fatal (Rule 4): one specific
-    log line is emitted and the exception propagates so uvicorn aborts
-    startup and the container exits non-zero. Redis being down is tolerated
-    (it surfaces as /health "degraded", not a refusal).
+    Order: Vault -> DB -> Redis -> MinIO -> tracing. A failure of any of
+    these dependencies is fatal (Rule 4): one specific log line is emitted
+    and the exception propagates so uvicorn aborts startup and the container
+    exits non-zero. Redis was previously tolerated as 'degraded'; Part 1
+    promotes it to fatal because the chatbot's short-term memory (Redis)
+    cannot degrade safely — a widget conversation with no short-term store
+    loses turn-to-turn coherence.
     """
     _configure_logging()
     try:
@@ -70,7 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         redis_client.ping()
     except redis_client.RedisUnreachableError as exc:
-        logger.warning("Redis unreachable at boot; /health will report degraded: %s", exc)
+        logger.critical("REFUSE TO BOOT: Redis dependency failed: %s", exc)
+        raise
 
     try:
         minio_client.bootstrap()
