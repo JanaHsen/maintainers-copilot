@@ -3,7 +3,6 @@ description: "Task list for the advanced RAG pipeline — /retrieve, corpus buil
 ---
 
 # Tasks: Advanced RAG Pipeline — `/retrieve` + corpus build + eval gate
-
 **Input**: Design documents from `/specs/rag/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
