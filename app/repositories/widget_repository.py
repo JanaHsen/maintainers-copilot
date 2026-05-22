@@ -5,12 +5,15 @@ Three functions:
   * :func:`create` — issue a new widget. Generates a 32-byte URL-safe
     token (research R5), stores its sha256 hex hash, returns
     ``(widget_id, plaintext_token)``. Plaintext is returned exactly once
-    here; the server never stores it.
+    here; the server never stores it. Also writes one ``audit_log`` row
+    (action=``widget.create``) in the same transaction so the widget row
+    and the audit row land atomically (FR-021, R3).
   * :func:`get_by_token_hash` — look up a non-revoked widget by sha256
     hash. Revoked rows are intentionally excluded.
-  * :func:`revoke` — set ``revoked_at = now()`` on the widget. Idempotent
-    against repeat calls (subsequent revokes simply overwrite the
-    timestamp).
+  * :func:`revoke` — set ``revoked_at = now()`` on the widget and write
+    one ``audit_log`` row (action=``widget.revoke``) in the same
+    transaction. Idempotent against repeat calls (subsequent revokes
+    simply overwrite the timestamp and append another audit row).
 
 The unique partial index ``ux_widgets_active_token`` enforces "no two
 non-revoked widgets share a host_token_hash" at the DB level; this module
@@ -28,6 +31,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.infra.database import get_engine
+from app.repositories import audit_repository
 
 
 class Widget(BaseModel):
@@ -88,6 +92,11 @@ def create(
     The plaintext is shown to the operator once at create time and never
     persisted; only the sha256 hex hash lands in ``widgets.host_token_hash``
     (research R5).
+
+    Writes a corresponding ``audit_log`` row (action=``widget.create``,
+    target_type=``widget``, target_id=widget_id, actor_user_id=owner_user_id)
+    in the same transaction so the widget row and its audit trail land
+    atomically (FR-021, R3).
     """
     widget_id = uuid.uuid4()
     plaintext = secrets.token_urlsafe(32)  # 43-char base64-url, 256 bits
@@ -102,6 +111,17 @@ def create(
                 "origins": allowed_origins,
                 "owner": owner_user_id,
             },
+        )
+        audit_repository.record(
+            action="widget.create",
+            target_type="widget",
+            target_id=str(widget_id),
+            payload={
+                "name": name,
+                "allowed_origins": allowed_origins,
+            },
+            actor_user_id=owner_user_id,
+            connection=conn,
         )
     return widget_id, plaintext
 
@@ -126,6 +146,30 @@ def get_by_token_hash(token_hash: str) -> Widget | None:
 
 
 def revoke(widget_id: uuid.UUID) -> None:
-    """Mark the widget as revoked. Subsequent lookups by hash skip it."""
+    """Mark the widget as revoked. Subsequent lookups by hash skip it.
+
+    Writes a corresponding ``audit_log`` row (action=``widget.revoke``,
+    target_type=``widget``, target_id=widget_id) in the same transaction so
+    the state change and its audit trail land atomically (FR-021, R3). The
+    actor is the widget's owner — looked up inside the same transaction.
+
+    Idempotent: revoking an already-revoked widget overwrites ``revoked_at``
+    and appends another audit row. Revoking an unknown widget_id is a no-op
+    (no widget row touched, no audit row written).
+    """
     with get_engine().begin() as conn:
+        owner_row = conn.execute(
+            text("SELECT owner_user_id FROM widgets WHERE id = :id"),
+            {"id": widget_id},
+        ).first()
+        if owner_row is None:
+            return
         conn.execute(_REVOKE_SQL, {"id": widget_id})
+        audit_repository.record(
+            action="widget.revoke",
+            target_type="widget",
+            target_id=str(widget_id),
+            payload=None,
+            actor_user_id=owner_row.owner_user_id,
+            connection=conn,
+        )
