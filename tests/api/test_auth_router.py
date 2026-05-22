@@ -93,6 +93,168 @@ def _promote_to_admin(email: str) -> None:
     asyncio.run(promote())
 
 
+def _query_role(email: str) -> str | None:
+    async def q() -> str | None:
+        sm = get_async_sessionmaker()
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    text("SELECT role FROM users WHERE email = :email"),
+                    {"email": email},
+                )
+            ).first()
+            return None if row is None else str(row[0])
+
+    return asyncio.run(q())
+
+
+def _query_audit_count(target_id: str) -> int:
+    """Count audit_log rows with action='user.role_changed' for a target."""
+    async def q() -> int:
+        sm = get_async_sessionmaker()
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM audit_log WHERE "
+                        "action = 'user.role_changed' AND target_id = :tid"
+                    ),
+                    {"tid": target_id},
+                )
+            ).first()
+            return 0 if row is None else int(row[0])
+
+    return asyncio.run(q())
+
+
+def _user_id_for(email: str) -> str | None:
+    async def q() -> str | None:
+        sm = get_async_sessionmaker()
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    text("SELECT id FROM users WHERE email = :email"),
+                    {"email": email},
+                )
+            ).first()
+            return None if row is None else str(row[0])
+
+    return asyncio.run(q())
+
+
+def test_register_ignores_body_role_field() -> None:
+    """Fix 1 (a): client-supplied role='admin' in registration body has no effect."""
+    _ensure_async_postgres_reachable()
+
+    email_prefix = "pytest-register-role-"
+    _delete_test_users(email_prefix)
+
+    from app.infra import auth_backend
+    auth_backend.get_jwt_strategy.cache_clear()
+
+    app = _build_app()
+    client = TestClient(app)
+
+    email = f"{email_prefix}{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple"
+
+    try:
+        # Body explicitly tries to set role='admin'.
+        resp = client.post(
+            "/auth/register",
+            json={"email": email, "password": password, "role": "admin"},
+        )
+        # Either UserCreate rejects the extra field (422) OR pydantic drops
+        # it (201). Either is a defense; the persisted row MUST have
+        # role='user' regardless.
+        assert resp.status_code in (201, 422), resp.text
+        if resp.status_code == 201:
+            assert resp.json()["role"] == "user"
+            assert _query_role(email) == "user"
+        else:
+            # If pydantic forbids the extra field, no user was created;
+            # register without role and confirm the persisted role is 'user'.
+            resp = client.post(
+                "/auth/register",
+                json={"email": email, "password": password},
+            )
+            assert resp.status_code == 201, resp.text
+            assert _query_role(email) == "user"
+    finally:
+        _delete_test_users(email_prefix)
+
+
+def test_role_change_endpoint() -> None:
+    """Fix 1 (b,c,d): non-admin 403; admin PATCH 200 + audit; self-PATCH 400."""
+    _ensure_async_postgres_reachable()
+
+    prefix = "pytest-role-change-"
+    _delete_test_users(prefix)
+
+    from app.infra import auth_backend
+    auth_backend.get_jwt_strategy.cache_clear()
+
+    app = _build_app()
+    client = TestClient(app)
+
+    # Two users: Alice will become admin; Bob is the target.
+    alice_email = f"{prefix}alice-{uuid.uuid4().hex[:8]}@example.com"
+    bob_email = f"{prefix}bob-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple"
+
+    try:
+        # Register both.
+        for e in (alice_email, bob_email):
+            resp = client.post(
+                "/auth/register",
+                json={"email": e, "password": password},
+            )
+            assert resp.status_code == 201, resp.text
+
+        bob_id = _user_id_for(bob_email)
+        alice_id = _user_id_for(alice_email)
+        assert bob_id is not None and alice_id is not None
+
+        # (b) Login as Alice (still role='user'). PATCH → 403.
+        resp = client.post(
+            "/auth/login",
+            data={"username": alice_email, "password": password},
+        )
+        assert resp.status_code == 204, resp.text
+        resp = client.patch(
+            f"/users/{bob_id}/role",
+            json={"role": "admin"},
+        )
+        assert resp.status_code == 403, resp.text
+
+        # (c) Promote Alice to admin directly, retry PATCH → 200 + audit row.
+        _promote_to_admin(alice_email)
+        baseline_audit = _query_audit_count(bob_id)
+        resp = client.patch(
+            f"/users/{bob_id}/role",
+            json={"role": "admin"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["user_id"] == bob_id
+        assert body["old_role"] == "user"
+        assert body["new_role"] == "admin"
+        assert _query_role(bob_email) == "admin"
+        assert _query_audit_count(bob_id) == baseline_audit + 1
+
+        # (d) Alice tries to PATCH her own role → 400.
+        resp = client.patch(
+            f"/users/{alice_id}/role",
+            json={"role": "user"},
+        )
+        assert resp.status_code == 400, resp.text
+        assert "own role" in resp.json()["detail"]
+        # Sanity: Alice's role is unchanged.
+        assert _query_role(alice_email) == "admin"
+    finally:
+        _delete_test_users(prefix)
+
+
 def test_auth_round_trip() -> None:
     """Full US1 lifecycle: register → login → /users/me → admin gate → logout."""
     _ensure_async_postgres_reachable()
