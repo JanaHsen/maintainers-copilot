@@ -476,3 +476,44 @@ under `mode=advanced, pipeline_config.parent_aggregation=first_seen`
 post-aggregation ordering, not the aggregation algorithm name; the
 underlying code is `app/services/retrieve_service.py::retrieve` with
 the max-by-parent reduction).
+
+## RAG hybrid α (T032) — ships at α = 1.0 (dense-only)
+
+`evals/rag/sweep_alpha.py` ran the advanced pipeline at
+α ∈ {0.0, 0.1, …, 1.0} against the 25-row golden set. The full sweep
+table is committed to `evals/rag/alpha_sweep.json`. Highlights:
+
+| α    | hit_at_5 | mrr_at_10 | ndcg   |
+|------|----------|-----------|--------|
+| 0.00 | 0.0000   | 0.0000    | 0.0000 |
+| 0.10 | 0.6933   | 0.5747    | 0.5515 |
+| 0.30 | 0.7067   | 0.5627    | 0.5497 |
+| 0.50 | 0.7067   | 0.5827    | 0.5587 |
+| **0.70** | **0.7067** | **0.5893** | **0.5620** |
+| 0.80 | 0.7067   | 0.5693    | 0.5530 |
+| **0.90** | **0.7067** | **0.5893** | **0.5620** |
+| **1.00** | **0.7067** | **0.5893** | **0.5620** |
+
+α = 0.70, 0.90, and 1.00 tie on every metric (to four decimal places),
+so the sweep cannot distinguish between them. Per FR-014 the operator
+picks the surviving configuration; per T032's protocol "if α=1.0 wins
+(dense-only), ship the simpler configuration".
+
+**Decision: ship at α = 1.0 (dense-only).** `MVP_ALPHA = 1.0` stays in
+`app/services/retrieve_service.py` unchanged. The hybrid wiring is in
+place (`chunk_repository.query_first_stage` already weights the
+sparse `ts_rank_cd` term against the dense cosine term), so flipping
+α non-1.0 is a one-line change if and when the trigger fires.
+
+**Trigger to switch back to non-1.0 α:** a future golden set whose
+questions lean heavily on exact-token matches (code identifiers,
+error class names, version numbers, file paths) — i.e. cases where
+`plainto_tsquery` would dominate cosine similarity. The first
+indicator would be a sweep where α < 1.0 beats α = 1.0 on hit_at_5
+by ≥ 5 points; the second indicator would be `nDCG` improving by ≥
+3 points at the same α. At that point the operator either lowers
+MVP_ALPHA or — per `research.md` R1 — replaces `ts_rank_cd` with a
+proper BM25 (`pgvector_bm25` extension or a separate index) before
+re-tuning α.
+
+Source: `evals/rag/alpha_sweep.json`.
