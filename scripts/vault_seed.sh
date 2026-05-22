@@ -31,11 +31,13 @@ for _ in {1..30}; do
   sleep 1
 done
 
-# Preserve any existing github_pat / anthropic_api_key unless a new one is
-# supplied via env. Both keys are operator-supplied — github_pat for the
-# dataset fetch, anthropic_api_key for the model server's /summarize.
+# Preserve any existing github_pat / anthropic_api_key / auth_jwt_secret
+# unless a new one is supplied via env. github_pat + anthropic_api_key are
+# operator-supplied; auth_jwt_secret is auto-generated on first boot if
+# absent (Rule 2 / research R2 — never read from env).
 existing_pat=""
 existing_anthropic=""
+existing_auth_jwt=""
 existing_json="$(curl -fsS -H "X-Vault-Token: ${VAULT_DEV_ROOT_TOKEN_ID}" "${SECRET_URL}" 2>/dev/null || true)"
 if [ -n "${existing_json}" ]; then
   existing_pat="$(printf '%s' "${existing_json}" \
@@ -43,6 +45,9 @@ if [ -n "${existing_json}" ]; then
     | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
   existing_anthropic="$(printf '%s' "${existing_json}" \
     | grep -o '"anthropic_api_key"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
+  existing_auth_jwt="$(printf '%s' "${existing_json}" \
+    | grep -o '"auth_jwt_secret"[[:space:]]*:[[:space:]]*"[^"]*"' \
     | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
 fi
 
@@ -56,6 +61,15 @@ if [ -z "${anthropic_api_key}" ]; then
   echo "note: no ANTHROPIC_API_KEY supplied and none stored; seeding empty anthropic_api_key (/summarize will return 503 until one is provided)."
 fi
 
+# auth_jwt_secret: never operator-supplied via env (Rule 2). If absent in
+# Vault, generate a fresh 32-byte hex value here. Stable across restarts
+# because we preserve the existing value.
+auth_jwt_secret="${existing_auth_jwt}"
+if [ -z "${auth_jwt_secret}" ]; then
+  auth_jwt_secret="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  echo "note: generated a fresh auth_jwt_secret (chatbot Part 1 fastapi-users JWT signing key)."
+fi
+
 echo "Seeding secret/maintainers-copilot..."
 curl -fsS -X POST \
   -H "X-Vault-Token: ${VAULT_DEV_ROOT_TOKEN_ID}" \
@@ -66,7 +80,8 @@ curl -fsS -X POST \
     "database_password": "dev_postgres_password",
     "minio_root_password": "dev_minio_password",
     "github_pat": "${github_pat}",
-    "anthropic_api_key": "${anthropic_api_key}"
+    "anthropic_api_key": "${anthropic_api_key}",
+    "auth_jwt_secret": "${auth_jwt_secret}"
   }
 }
 JSON
