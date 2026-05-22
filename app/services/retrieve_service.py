@@ -41,10 +41,11 @@ from app.repositories import chunk_repository
 
 logger = logging.getLogger("app.services.retrieve")
 
-# Phase-4 MVP constants. Phase-5 commits replace these with config-driven
-# values; the names match so the router doesn't need to change.
-MVP_ALPHA = 1.0          # dense-only (FR-019 naive baseline shape)
-MVP_FIRST_STAGE_K = 30   # the spec's stage-1 cap; capped further by req.k
+# Phase-5 advanced-pipeline constants (T031 wires parent-document
+# chunking + max-child-score aggregation; later Phase-5 commits flip
+# the others as their evals land).
+MVP_ALPHA = 1.0          # dense-only (T032 will set the post-sweep value)
+MVP_FIRST_STAGE_K = 30   # the spec's stage-1 cap (FR-015)
 
 
 RetrieveErrorKind = Literal[
@@ -109,7 +110,9 @@ def retrieve(
         return RetrieveError(kind=kind, detail=redact(str(exc)))
 
     filters = _filters_from_request(req)
-    stage_k = max(req.k, 1)
+    # Always over-fetch at stage 1 so the parent-aggregation step has a
+    # population to draw the top-k unique parents from (FR-015 / R2).
+    stage_k = MVP_FIRST_STAGE_K
     hits = chunk_repository.query_first_stage(
         embedding=query_embedding,
         query_text=req.question,
@@ -119,28 +122,50 @@ def retrieve(
         corpus_run_id=corpus_run_id,
     )
 
-    # Phase-4 MVP: child chunks returned directly (no parent aggregation,
-    # no cross-encoder rerank — the same naive shape FR-019 tests against).
-    chunks = [
-        RetrievedChunk(
-            content=h.content,
-            source_type=h.source_type,
-            source_id=h.source_id,
-            score=h.score,
-            metadata={
+    # T031 — Advanced choice 1: parent-document chunking. Aggregate the
+    # 30 child hits by parent_id using the MAX child score (R2), then
+    # fetch and return the top-k unique PARENT chunks.
+    parent_scores: dict[str, float] = {}
+    parent_meta: dict[str, dict[str, str]] = {}
+    parent_source_type: dict[str, str] = {}
+    parent_source_id: dict[str, str] = {}
+    for h in hits:
+        if h.parent_id not in parent_scores or h.score > parent_scores[h.parent_id]:
+            parent_scores[h.parent_id] = h.score
+            parent_meta[h.parent_id] = {
                 "source_timestamp": h.source_timestamp.isoformat(),
                 "section_path": h.section_path,
                 "corpus_run_id": corpus_run_id,
-                "parent_id": h.parent_id,
-            },
-            chunk_id=h.chunk_id,
+            }
+            parent_source_type[h.parent_id] = h.source_type
+            parent_source_id[h.parent_id] = h.source_id
+
+    ranked_parent_ids = sorted(
+        parent_scores, key=lambda pid: parent_scores[pid], reverse=True
+    )[: req.k]
+    parents = chunk_repository.fetch_parents(ranked_parent_ids)
+    chunks: list[RetrievedChunk] = []
+    for pid in ranked_parent_ids:
+        parent = parents.get(pid)
+        if parent is None:
+            # The parent row should always exist for any child row, but
+            # defensive in case of a partial corpus build.
+            continue
+        chunks.append(
+            RetrievedChunk(
+                content=parent.content,
+                source_type=parent.source_type,
+                source_id=parent.source_id,
+                score=parent_scores[pid],
+                metadata={**parent_meta[pid], "parent_id": pid},
+                chunk_id=pid,
+            )
         )
-        for h in hits[: req.k]
-    ]
     logger.info(
-        "retrieve: question_len=%d k=%d returned=%d trace_id=%s",
+        "retrieve: question_len=%d k=%d stage1=%d parents=%d trace_id=%s",
         len(req.question),
         req.k,
+        len(hits),
         len(chunks),
         trace_id,
     )
