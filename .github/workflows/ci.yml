@@ -195,6 +195,30 @@ jobs:
             --upload-report \
             --check-thresholds
 
+      - name: NER eval gate (Rule 5 / Rule 10 — US5)
+        # Fixture-mode replay of evals/ner/eval_ner.py against the
+        # prebaked predictions in evals/ner/fixture_outputs.jsonl so the
+        # gate does not burn Anthropic credits on every CI run. Exits
+        # non-zero if the aggregate micro-F1 falls below
+        # eval_thresholds.yaml's ner.f1_floor. The operator regenerates
+        # the fixture from a real run with --mode=real
+        # --emit-fixture=evals/ner/fixture_outputs.jsonl.
+        run: |
+          uv run python -m evals.ner.eval_ner \
+            --mode=fixture \
+            --out=evals/reports/${{ github.run_id }}/ner.json
+
+      - name: Summarize eval gate (Rule 5 / Rule 10 — US5)
+        # Fixture-mode replay of evals/summarize/eval_summarize.py
+        # against the prebaked predictions + rubric scores in
+        # evals/summarize/fixture_outputs.jsonl. Exits non-zero if the
+        # mean rubric score falls below
+        # eval_thresholds.yaml's summarize.rubric_floor.
+        run: |
+          uv run python -m evals.summarize.eval_summarize \
+            --mode=fixture \
+            --out=evals/reports/${{ github.run_id }}/summarize.json
+
       - name: Stack down
         if: always()
         run: docker compose down -v

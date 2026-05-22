@@ -35,3 +35,19 @@ rag:
   faithfulness_floor: 0.85
   answer_relevancy_floor: 0.59
   context_recall_floor: 0.52
+
+# NER eval floor. Pilot-buffer value (research R7 / R8); revisit
+# once a real-API run against evals/ner/golden.jsonl establishes
+# the observed micro-F1. The 0.60 floor is intentionally conservative
+# so CI never false-alarms on first contact; it is non-zero per Rule 4
+# (eval gates without enforceable floors are not gates).
+ner:
+  f1_floor: 0.60
+
+# Summarize rubric floor. Pilot-buffer value (R8). The metric is the
+# mean across the three rubric dimensions (faithfulness, conciseness,
+# intent) on a 1-5 scale. 3.5 represents "above the mid-point on
+# every dimension on average" and is conservative enough for first
+# contact; revisit after a real-API pilot run.
+summarize:
+  rubric_floor: 3.5
