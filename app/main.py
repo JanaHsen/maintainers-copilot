@@ -16,6 +16,7 @@ from app.infra.minio_client import MinioUnreachableError
 from app.infra.request_context import RequestContextMiddleware
 from app.infra.tracing import setup_tracing, shutdown_tracing
 from app.infra.vault_client import (
+    KEY_AUTH_JWT_SECRET,
     KEY_DATABASE_PASSWORD,
     KEY_MINIO_ROOT_PASSWORD,
     VaultBootstrapError,
@@ -26,7 +27,13 @@ logger = logging.getLogger("app")
 
 # Keys the api itself requires at boot. github_pat is used only by the offline
 # dataset script, so it is intentionally not required to start the api.
-REQUIRED_VAULT_KEYS = [KEY_DATABASE_PASSWORD, KEY_MINIO_ROOT_PASSWORD]
+# auth_jwt_secret is required because the auth router refuses to mount without
+# a signing key (Rule 2 — no env fallback) and Part 1 mounts the auth router.
+REQUIRED_VAULT_KEYS = [
+    KEY_DATABASE_PASSWORD,
+    KEY_MINIO_ROOT_PASSWORD,
+    KEY_AUTH_JWT_SECRET,
+]
 
 
 def _configure_logging() -> None:
