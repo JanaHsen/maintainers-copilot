@@ -756,3 +756,87 @@ prototype against the same 25-row golden set.
 
 Source: course materials "GraphRAG vs flat RAG" decision matrix
 (four-bullet criterion list).
+
+# Chatbot Part 1 — Foundations
+
+## NER + summarize services built in Part 1 (scope expansion vs. brief)
+
+The Part 1 brief said the chatbot agent would have six tools wrapping
+`/classify`, `/ner`, `/summarize`, `/retrieve`, `write_memory`,
+`recall_memory`, and described the first four as "wrapping existing
+endpoints." When we inventoried, `classifier_service` and
+`retrieve_service` existed but `ner_service` and `summarize_service`
+did not — only `/retrieve` and `/health` were mounted as routers.
+
+We expanded Part 1's scope to build the two missing services here
+rather than dropping them, stubbing them, or pushing them into Part 2.
+
+**Rationale.** Stubbed tools mean Part 2's tool-selection eval is partly
+fictional, violating Rules 5 and 6 (every claim backed by numbers).
+Dropping to a 4-tool agent is a larger structural divergence from the
+brief than filling the gap. Pushing the services into Part 2 muddies
+Part 2's focus on the agent loop + eval and adds ~½ day of
+service-creation work to a Part that already carries 15 conversation
+evals.
+
+**Implementation cost.** ~150 LOC each (one Anthropic call, one
+prompt, one router, one typed-outcome service); minimal eval sets at
+`evals/ner/golden.jsonl` (10 examples, programmatic F1) and
+`evals/summarize/golden.jsonl` (10 examples, frozen Claude Haiku
+rubric judge). Floors at `eval_thresholds.yaml.ner.f1_floor=0.60`
+and `summarize.rubric_floor=3.5` (conservative pilot values; both
+non-zero per Rule 4, to be revisited after a real-API pilot run).
+
+**Source.** Spec §Assumptions, plan.md §Summary, research.md R7/R8,
+operator-confirmed via the pre-Phase-A clarification exchange.
+
+## Parallel async SQLAlchemy engine for fastapi-users (justified deviation)
+
+fastapi-users-db-sqlalchemy requires an `AsyncSession`. The rest of
+`app/` (RAG + classifier + health) runs on the sync engine from
+`app/infra/database.py`. Part 1 introduces `app/infra/database_async.py`
+as a parallel engine scoped strictly to fastapi-users' `users` table
+work.
+
+**Rationale.** Migrating every existing repository to async would
+expand Part 1's scope by ~1-2 days and risk regressions in the
+already-shipped RAG slice. Running two engines against the same
+database is safe because they operate on disjoint tables. The cost is
+one extra adapter file (`database_async.py`, ~50 LOC) and one extra
+fixture pattern in `tests/repositories/test_user_repository.py`.
+
+**Alternatives rejected.** Switching the whole project to async is
+out of scope. Wrapping fastapi-users in `run_in_threadpool` is brittle
+(its `BaseUserManager`, `SQLAlchemyUserDatabase`, and `JWTStrategy`
+interlock with the async lifecycle).
+
+**Source.** Plan §Complexity Tracking (the one row), research.md R1.
+
+## Redaction at persistence boundary AND log handler (two layers)
+
+The existing redaction layer (`app/infra/log_redaction.py`'s
+`RedactingFilter`) ran at log emission only. Part 1 adds
+`redact_for_persistence(text)` and calls it from `write_memory_tool`
+and `short_term_memory_service.append` BEFORE the content reaches
+Postgres / Redis.
+
+**Rationale.** Without the persistence-boundary layer, a maintainer
+who pastes `sk-ant-…` into a chat message that becomes a
+`write_memory` call would persist the secret unredacted into Postgres
+even though the log line was redacted. That is a Rule 2 / Rule 7
+hole. The redaction-test suite (`tests/infra/test_log_redaction.py`,
+12 cases) asserts both the log path and the persistence helper
+replace `sk-ant-…`, JWTs, and email addresses with placeholders.
+
+The two layers stay because not every redactable text passes through
+the persistence path — uncaught exception messages from libraries we
+don't control reach the log path directly.
+
+**Rules covered.** Persistence redaction is conservative: a benign
+technical phrase like "ConnectionError on the requests package" is
+left untouched. Only strings matching known secret/PII shapes are
+replaced. The four placeholders are `[REDACTED]`, `[REDACTED_JWT]`,
+`[REDACTED_EMAIL]`, and `[REDACTED]` again for the generic 40+-char
+opaque-token catchall.
+
+**Source.** Research.md R6, T004 commit, T020 + T018 implementation.
