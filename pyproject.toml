@@ -24,6 +24,7 @@ dependencies = [
   "pyarrow>=17.0",
   "psycopg[binary]>=3.2",
   "anthropic>=0.40",
+  "fastapi-users[sqlalchemy]>=14",
 ]
 
 [dependency-groups]
