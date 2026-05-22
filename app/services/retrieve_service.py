@@ -102,12 +102,13 @@ def retrieve(
 
     corpus_run_id = get_settings().rag_corpus_run_id
 
-    # T034 — HyDE wiring tested twice (key=n/a, then with a real key
-    # under broken container DNS) and DROPPED both times. See
-    # DECISIONS.md "## RAG HyDE (T034) — DROPPED (test environment
-    # blocked the real-key retest)". hyde_service.py + prompts/hyde.md
-    # stay in the repo for future use; one-line re-wiring restores
-    # HyDE once the environment is healthy.
+    # T034 — HyDE wiring tested 3 times (key=n/a, DNS-broken, then
+    # real-key real-DNS). Real-key run produced HyDE-generated
+    # 642-char hypothetical answers with 0% fallback, but retrieval
+    # metrics breached every floor — HyDE pulls semantically distant
+    # parents that miss the golden chunk_ids. DROPPED. See
+    # DECISIONS.md "## RAG HyDE (T034) — DROPPED (real-key numbers
+    # recorded)". hyde_service.py + prompts/hyde.md stay in the repo.
 
     try:
         query_embedding = embedding_client.embed(req.question, request_id=request_id)

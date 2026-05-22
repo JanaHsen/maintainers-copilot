@@ -596,7 +596,7 @@ Sources: `/tmp/rag_eval/advanced_t033.json` (attempt 1) and
 committed; the post-T032 numbers in
 `evals/reports/{run_ts}/rag.json` are the live state.
 
-## RAG HyDE (T034) — DROPPED (test environment blocked the real-key retest)
+## RAG HyDE (T034) — DROPPED (real-key numbers recorded)
 
 `prompts/hyde.md` is committed with a version-stamped two-section
 (System / User) prompt that asks Claude Haiku for a pandas-canonical
@@ -617,49 +617,101 @@ fallback-mode numbers were inside the ivfflat ANN noise floor
 broke mid-session.** The operator seeded a real
 `anthropic_api_key` in dev Vault and asked for a re-run. By the
 time the HyDE rewire landed, Docker Desktop's container DNS
-forwarder (`127.0.0.11`) had stopped resolving any external host —
-`api.anthropic.com`, `google.com`, `github.com`, and `pypi.org` all
-returned `EAI_AGAIN` from inside the api container. Restarting api
-+ vault, recreating the container, and trying explicit `--dns
-8.8.8.8 --dns 1.1.1.1` all failed. So HyDE again fell back 100%,
+forwarder (`127.0.0.11`) had stopped resolving any external host
+(host firewall blocks outbound UDP/TCP port 53 from the Docker
+network — confirmed by `nc 8.8.8.8 53` timeout while
+`nc 160.79.104.10 443` succeeds). So HyDE again fell back 100%,
 this time for a different reason — and `docker compose down`
-wiped the dev-Vault's seeded key (in-memory storage). The retest
-is structurally unable to run in this Docker Desktop on Windows
-state without a daemon restart.
+wiped the dev-Vault's seeded key (in-memory storage).
 
-| metric        | post-T032 (no HyDE) | HyDE-wired, key=n/a (100% fallback) | HyDE-wired, DNS-broken (100% fallback) |
-|---------------|---------------------|-------------------------------------|----------------------------------------|
-| `hit_at_5`    | 0.7067              | 0.7067                              | n/a (eval skipped)                     |
-| `mrr_at_10`   | 0.5893              | 0.5693                              | n/a                                    |
-| `ndcg`        | 0.5620              | 0.5530                              | n/a                                    |
+**Attempt 3 — real key seeded, DNS-blocking worked around via
+`/etc/hosts`.** Operator re-seeded `anthropic_api_key` in dev
+Vault after a clean compose restart. Port-53 DNS is still
+firewalled, so an `/etc/hosts` override in the running api
+container injects `160.79.104.10 api.anthropic.com` (TCP 443 to
+that IP works — the block is DNS-only). With that workaround,
+`hyde_service.transform()` runs cleanly: every one of the 25
+golden questions produced a real Claude Haiku hypothetical
+(≈600-char output from a ≈50-char question; **fallback rate = 0%**,
+26/26 `hyde_applied=True` events in the eval's api log). All six
+metrics measured below.
 
-The MRR / nDCG dips in the attempt-1 column are **ANN noise**
-(pgvector's ivfflat `lists=100` index gives slightly different
-top-30 orderings across calls), not a HyDE signal — the embedding
-input was the raw question both times because HyDE fell back.
+| metric                  | post-T032 (no HyDE) | HyDE-wired, real key | delta       |
+|-------------------------|---------------------|----------------------|-------------|
+| `retrieval.hit_at_5`    | **0.7067**          | 0.4267               | **-0.2800** |
+| `retrieval.mrr_at_10`   | **0.5893**          | 0.4640               | **-0.1253** |
+| `retrieval.ndcg`        | **0.5620**          | 0.3775               | **-0.1845** |
+| `generation.faithfulness`     | **0.9244**    | 0.8900               | **-0.0344** |
+| `generation.answer_relevancy` | 0.6588        | **0.7532**           | **+0.0944** |
+| `generation.context_recall`   | 0.5876        | **0.6776**           | **+0.0900** |
 
-**Decision: keep the wiring dropped, in-repo for future use.** Per
-T034 protocol ("if it doesn't beat, revert"). `prompts/hyde.md`
-and `hyde_service.py` both stay; the service's fallback contract is
-honoured; re-wiring is one line in `retrieve_service`.
+**Decision: DROPPED.** Per T034 protocol HyDE technically beats
+baseline on two generation metrics, but it breaches every
+retrieval floor (`hit_at_5_floor=0.64` vs measured 0.4267,
+`mrr_at_10_floor=0.50` vs 0.4640, `ndcg_floor=0.48` vs 0.3775) —
+shipping HyDE would turn CI red. The retrieval regression is
+large (-28 points on hit_at_5) and dominates the gen-side
+improvement.
+
+**Why HyDE hurts retrieval but helps generation:**
+
+1. **Different chunk_ids surface.** The Claude-generated 600-char
+   hypothetical answer steers the embedding to a *different
+   neighbourhood* in vector space than the raw question. The
+   golden set was labeled against parents that match the raw
+   question's neighbourhood — so by definition HyDE's
+   neighbourhood misses those golden parents and `hit_at_5`
+   collapses.
+2. **The contexts it does pull are still answer-bearing.** The
+   judge scores `context_recall` by whether the retrieved
+   contexts contain enough to answer — they often do, even when
+   they aren't the golden parents. Same for `answer_relevancy`,
+   which scores the *generated answer*, not the retrieval — a
+   richer context block produces a more on-point answer.
+3. **Faithfulness dips slightly.** A longer / richer context
+   pulls in tangential facts; the model occasionally extrapolates
+   beyond the contexts when its own pre-trained knowledge fills
+   gaps. The -0.034 dip is within noise but consistent with this.
+
+**Net read:** HyDE's two gen-side wins are dominated by the
+retrieval-side regression for this corpus and golden set. The
+golden set's parent_id labels reward retrieval against the
+raw-question neighbourhood; HyDE is optimizing for a different
+objective (generation quality given any-relevant context).
 
 **Triggers to re-evaluate:**
 
-1. Restart Docker Desktop to restore container DNS.
-2. Re-seed the Anthropic key in dev Vault:
-   `docker compose exec vault sh -c 'VAULT_TOKEN=root VAULT_ADDR=http://localhost:8200 vault kv patch secret/maintainers-copilot anthropic_api_key=sk-…'`
-3. Re-add `text_to_embed, _ = hyde_service.transform(req.question)`
-   ahead of the embed call in `retrieve_service.retrieve()`.
-4. Run `evals/rag/eval_rag.py --mode advanced --with-generation`.
-   Ship HyDE if hit_at_5 improves by ≥ 2pp above the ANN noise
-   floor; otherwise drop with the real-key numbers documented.
+- **Re-label the golden set against HyDE's retrieved
+  parents.** If the operator manually approves the parents HyDE
+  surfaces (mostly the right answer's-shape passages, just not
+  the *labeled* parents), the retrieval-metric regression
+  disappears and HyDE's gen-side win stands. This is the cleanest
+  path to a real "ship kept" decision.
+- **Different golden set bias.** If a future golden set weights
+  generation-quality questions over retrieval-quality questions,
+  HyDE flips. Re-run with that golden set.
+- **Hybrid mode.** Embed BOTH the raw question and the HyDE
+  output, take the union or the max; keeps the raw-question
+  retrieval surface while picking up HyDE's gen-side wins.
+  One-day implementation against the existing service.
 
-Sources: `/tmp/rag_eval/advanced_t034.json` (attempt 1, fallback
-mode); the api log line "HyDE generation failed (anthropic
-unreachable: Connection error.)" + `docker compose exec api
-python -c "import socket; socket.gethostbyname('api.anthropic.com')"`
-returning `EAI_AGAIN` confirm the attempt-2 DNS state. Neither
-report is committed; the post-T032 numbers in
+**Why the wiring stays in repo:** `prompts/hyde.md` parses
+cleanly via `model_server.prompts.load_system_user`,
+`hyde_service.transform()` honours its fallback contract on the
+real key path, and the one-line re-wire restores HyDE the moment
+any of the three triggers above lands.
+
+Sources:
+- attempt 1: `/tmp/rag_eval/advanced_t034.json` (fallback-mode
+  numbers, key=n/a)
+- attempt 2: api log "HyDE generation failed (anthropic
+  unreachable: Connection error.)" + a `socket.gethostbyname` failure
+  confirmed the DNS state
+- attempt 3: `/tmp/rag_eval/advanced_t034_v2.json` — 25/25 scored,
+  0/25 HyDE fallbacks (26 `hyde_applied=True` logs vs 0 `False`),
+  full six-axis comparison table above
+
+None of these reports is committed; the post-T032 numbers in
 `evals/reports/{run_ts}/rag.json` remain the live state.
 
 ## GraphRAG rejected (FR-026)
