@@ -99,7 +99,7 @@ def predict_advanced(
     `k` is clamped to 20 per `RetrieveRequest.k`'s validator (FR-001).
     """
     own_client = client is None
-    c = client or httpx.Client(timeout=60.0)
+    c = client or httpx.Client(timeout=180.0)
     k = min(k, 20)
     try:
         resp = c.post(
@@ -358,24 +358,39 @@ def upload_report(report: dict[str, Any], *, run_ts: str) -> str:
     return f"s3://{DATA_BUCKET}/{key}"
 
 
+_FLOORS: tuple[tuple[str, str, str], ...] = (
+    # (yaml_floor_key, report_block, metric_key)
+    ("hit_at_5_floor", "retrieval", "hit_at_5"),
+    ("mrr_at_10_floor", "retrieval", "mrr_at_10"),
+    ("ndcg_floor", "retrieval", "ndcg"),
+    ("faithfulness_floor", "generation", "faithfulness"),
+    ("answer_relevancy_floor", "generation", "answer_relevancy"),
+    ("context_recall_floor", "generation", "context_recall"),
+)
+
+
 def check_thresholds(report: dict[str, Any], thresholds: dict[str, Any]) -> list[str]:
-    """Return a list of human-readable breach messages (empty = passes)."""
+    """Return a list of human-readable breach messages (empty = passes).
+
+    Each floor is enforced only if (a) it's set in the YAML and (b) the
+    corresponding metric is present in the report. A floor set in YAML
+    against a metric that's absent from the report (e.g. generation
+    floors when --with-generation wasn't passed) is silently skipped —
+    the report says "we didn't measure this", not "we measured zero".
+    """
     breaches: list[str] = []
     rag_floors = (thresholds or {}).get("rag", {})
-    retrieval = report.get("retrieval", {})
-    if "hit_at_5_floor" in rag_floors:
-        floor = float(rag_floors["hit_at_5_floor"])
-        value = float(retrieval.get("hit_at_5", 0.0))
+    for yaml_key, block, metric in _FLOORS:
+        if yaml_key not in rag_floors:
+            continue
+        block_dict = report.get(block, {})
+        if metric not in block_dict:
+            continue
+        floor = float(rag_floors[yaml_key])
+        value = float(block_dict[metric])
         if value < floor:
             breaches.append(
-                f"retrieval.hit_at_5 = {value:.4f} below floor {floor:.4f}"
-            )
-    if "mrr_at_10_floor" in rag_floors:
-        floor = float(rag_floors["mrr_at_10_floor"])
-        value = float(retrieval.get("mrr_at_10", 0.0))
-        if value < floor:
-            breaches.append(
-                f"retrieval.mrr_at_10 = {value:.4f} below floor {floor:.4f}"
+                f"{block}.{metric} = {value:.4f} below floor {floor:.4f}"
             )
     return breaches
 
