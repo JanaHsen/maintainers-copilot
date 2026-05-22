@@ -895,3 +895,153 @@ embed the same outputs the real model produced.
 **Trigger to revisit**: if observed scores trend consistently above 0.95 /
 4.85 over several pushes, floors can move up. If the golden set grows
 beyond 10 examples (or the prompts change versions), re-pilot and rederive.
+
+# Chatbot Part 2 — Brain
+
+## R1 — Conversation window: message-count cap (20), not token-precise
+
+**Decision**: The chatbot service's `_stm_window_to_messages` reads the
+short-term-memory list via `short_term_memory_service.get_window(max_tokens=4000)`
+as a safety net, then tail-slices to `WINDOW_MESSAGE_CAP = 20` Anthropic
+messages.
+
+**Rationale**: Token-precise windowing requires a tokenizer dep (tiktoken
+or fork) AND per-message length math; Sonnet 4's 200k context window
+makes precision uninteresting. 20 messages ≈ 10 user/assistant pairs at
+~200-400 tokens each — well within budget after system prompt + tool
+defs. Deterministic, two LRANGE + slice operations, zero new dependencies.
+
+**Alternatives rejected**: tiktoken-based exact budgeting (new dep, not
+1:1 with Anthropic's tokenizer); no cap (eventually overflows or burns
+runaway tokens); sliding-window summarization (out of Part 2 scope —
+adds a per-turn Anthropic call).
+
+**Source**: research.md R1.
+
+## R2 — Tool-result format: JSON string in `content`
+
+**Decision**: Each tool dispatch returns a `dict`; the chatbot service
+serializes via `json.dumps(output, default=str)` and assembles the
+tool_result block `{"type": "tool_result", "tool_use_id": <id>, "content":
+<string>, "is_error": "error" in output}`. Anthropic SDK accepts either
+string or content-block list; we picked string for the uniform shape.
+
+**Rationale**: Same effect on Sonnet's understanding either way; the
+string form is simpler at the dispatch boundary, doesn't need per-tool
+content-block bookkeeping, and the longest expected payload
+(`retrieve_context` with 5 chunks of snippets) is still under 3 kB.
+
+**Alternatives rejected**: structured content blocks (more code, no
+observable benefit for the 6 tools); typed Python objects passed
+directly (SDK accepts only `str` or `list[ContentBlock]`).
+
+**Source**: research.md R2.
+
+## R3 — Loop-cap exhaustion: typed fallback assistant message, not 5xx
+
+**Decision**: After `MAX_TOOL_ITERATIONS = 6` iterations without
+`stop_reason="end_turn"`, the loop appends the fallback assistant
+message `"I ran out of attempts to finish that — please rephrase or
+simplify."` to the conversation, sets the top-level chat.turn span
+attribute `loop_exhausted=true`, and returns a normal `ChatOk` with the
+fallback text + the accumulated `tool_trace`.
+
+**Rationale**: Rule 11 forbids 5xx from chatbot code paths; loop
+exhaustion is a model-behavior failure, not infra. A polite assistant
+reply keeps the chat usable; the trace store carries the
+operator-actionable diagnostic.
+
+**Alternatives rejected**: raise → 500 (violates Rule 11); a 7th
+forced-end-turn Anthropic call (doubles bad-case latency + cost);
+configurable cap (yet another knob; PR if Part 3 needs different).
+
+**Source**: research.md R3.
+
+## Chatbot eval floors set from real pilot
+
+**Date**: 2026-05-23.
+
+**Observed** (pilot 4, after broadening the widget-refusal regex from a
+strict negation-then-noun phrase to a lookahead-pair pattern that
+matches any-order negation+memory-keyword):
+
+| Metric | Observed |
+|--------|----------|
+| `tool_selection_accuracy` | 0.80 (4/5) |
+| `memory_write_rate` | 1.00 (3/3) |
+| `memory_recall_at_3` | 1.00 (4/4) |
+| `widget_refusal_rate` | 1.00 (3/3) |
+
+**Floors landed**:
+
+| Metric | Floor |
+|--------|-------|
+| `tool_selection_accuracy_floor` | 0.7 |
+| `memory_write_rate_floor` | 0.7 |
+| `memory_recall_at_3_floor` | 0.7 |
+| `widget_refusal_rate_floor` | 0.7 |
+
+**Rationale for extra buffer beyond the standard 5pt**: the small-set
+metrics (3- or 4-scenario categories) move 25-33 points when one
+scenario flakes. A 5pt buffer would gate CI on routine model variance
+rather than real regression. 0.7 across the board lets two of three
+scenarios pass on the smallest sets, and is still 10+ points below
+observed on the larger set.
+
+**Notable failure** (kept in golden, accepted by the floor): scenario
+**c04** "how do I groupby in pandas" expected `retrieve_context` —
+Sonnet answered from its own knowledge instead. Documented in the
+golden README. Will revisit if/when the prompt is reshaped to push
+the model toward retrieval more aggressively.
+
+**Fixture regenerated**: `evals/chatbot/fixture_outputs.jsonl` carries
+the pilot-4 captured outputs so CI's `--mode=fixture` reproduces the
+same metrics deterministically.
+
+**Trigger to revisit**: if observed scores trend consistently above 0.9
+across all four metrics over several pushes, floors can move up. If
+prompts (`prompts/chatbot_system.md`) or golden set change, re-pilot.
+
+## Widget refusal regex: lookahead-pair pattern
+
+**Decision**: Each widget_refusal scenario's expected refusal pattern
+uses the regex:
+
+```
+(?i)(?=.*(can'?t|cannot|unable|not able|n'?t|don'?t|isn'?t|won'?t|no access|no long.?term))(?=.*(save|store|remember|recall|retriev|memory|persist|long.?term|access|available))
+```
+
+Two `(?=.*...)` lookaheads: one for a negation token, one for a
+memory-related noun. Both must appear anywhere in the message, in any
+order.
+
+**Rationale**: Sonnet's natural refusal phrasings span many orders and
+forms ("I'm not able to save", "long-term memory isn't available",
+"I don't have access to long-term memory", "I can't retrieve what you
+told me"). A strict negation-then-noun pattern was 2/3 on the pilot;
+order-agnostic lookaheads were 3/3.
+
+**Trade-off**: the lookahead pattern can match false positives — a
+sentence that mentions "memory" and contains an unrelated "can't"
+might pass. The metric also requires "no successful write_memory call"
+as the harder condition, so the false-positive risk is bounded:
+Sonnet would have to refuse the write AND happen to use the words.
+Acceptable.
+
+## Audit payload extension: content_hash + memory_id + conversation_id
+
+**Decision**: Part 2's `write_memory` audit row payload now carries
+`{conversation_id, memory_id, content_hash, content_bytes, source,
+trace_id, request_id}`. `content_hash` is `sha256(redacted_content)`.
+
+**Rationale**: Part 2 brief §7 calls for `content_hash` so the Part 3
+admin panel can correlate audit rows to chatbot_memories rows without
+having to read raw content. The hash is over the REDACTED content (the
+same string that lands in `chatbot_memories.content`) so a join via
+hash is meaningful. Computing over raw content would let an audit row
+prove the secret was seen — defeats the whole point of redaction.
+
+**Compatibility**: additive — Part 1's existing fields are preserved.
+No reader exists yet (Part 3 admin panel is the consumer).
+
+**Tested by**: `tests/integration/test_chatbot_redaction.py`.

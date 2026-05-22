@@ -70,6 +70,55 @@ docker-compose down       # keep volumes
 docker-compose down -v    # also drop pg/minio data (clean slate)
 ```
 
+## Chat endpoints (Part 2)
+
+```bash
+# Sign in as the admin seeded by Part 1 Fix 2.
+curl -s -c /tmp/mc.cookies -X POST http://localhost:8000/auth/login \
+  -d 'username=admin@example.com&password=changeme-please' -o /dev/null
+
+# Authed chat turn.
+curl -s -b /tmp/mc.cookies -X POST http://localhost:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Classify this issue: title=DataFrame.groupby crashes; body=Raises ValueError on empty input."}' | jq
+
+# Follow-up in the same conversation_id (from the prior response).
+curl -s -b /tmp/mc.cookies -X POST http://localhost:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"conversation_id":"<UUID>", "message":"Now summarize it."}' | jq
+
+# Widget chat (anonymous). Token must be an existing widget's host token;
+# Origin must be in widget.allowed_origins.
+curl -s -X POST http://localhost:8000/widget/chat \
+  -H 'X-Widget-Token: <plaintext token from widget creation>' \
+  -H 'Origin: http://localhost:8080' \
+  -H 'Content-Type: application/json' \
+  -d '{"widget_id":"<UUID>","session_id":"visitor-1","message":"Please remember my repo is acme/widget."}' | jq
+
+# Expect: assistant_message contains a refusal of long-term memory;
+#         tool_trace shows write_memory with is_error=true.
+#         SELECT count(*) FROM chatbot_memories WHERE conversation_id IN
+#         (this widget's session) = 0.
+```
+
+## Chatbot eval
+
+```bash
+# Fixture mode (no Anthropic calls; what CI runs).
+docker compose exec api python -m evals.chatbot.eval_chatbot \
+  --mode=fixture --check-thresholds
+
+# Real mode (operator-only — burns API).
+docker compose exec api python -m evals.chatbot.eval_chatbot --mode=real
+
+# Regenerate fixture from a fresh real run (after a prompt change, etc.).
+docker compose exec api python -m evals.chatbot.eval_chatbot \
+  --mode=real --emit-fixture=evals/chatbot/fixture_outputs.jsonl
+```
+
+The four floors live under `eval_thresholds.yaml.chatbot.*` and gate
+merge via the CI step "Chatbot eval gate (Rule 5 / Rule 10 — US4)".
+
 ## Known issues, deferred
 
 Two issues identified during Part 1 that have known follow-up slices rather
