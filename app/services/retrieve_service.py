@@ -128,10 +128,11 @@ def retrieve(
         corpus_run_id=corpus_run_id,
     )
 
-    # T033 — Cross-encoder rerank was tested and DROPPED (DECISIONS.md
-    # "## RAG cross-encoder rerank (T033) — DROPPED"). The reranker
-    # client is still in the repo for FR-016 / future re-evaluation;
-    # this service skips it.
+    # T033 — Cross-encoder rerank tested twice (ms-marco-MiniLM-L-6-v2
+    # then BAAI/bge-reranker-base) and DROPPED both times. See DECISIONS.md
+    # "## RAG cross-encoder rerank (T033) — DROPPED (two attempts)" for the
+    # numbers. reranker_client.py + the /rerank endpoint stay in the repo
+    # for future re-evaluation; this service skips them.
 
     # T031 — Advanced choice 1: parent-document chunking. Aggregate the
     # 30 child hits by parent_id using the MAX child score (R2), then

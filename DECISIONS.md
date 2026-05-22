@@ -518,56 +518,83 @@ re-tuning α.
 
 Source: `evals/rag/alpha_sweep.json`.
 
-## RAG cross-encoder rerank (T033) — DROPPED
+## RAG cross-encoder rerank (T033) — DROPPED (two attempts)
 
-Wired `reranker_client.rerank` into `retrieve_service` between the
-30-hit stage-1 query and the parent-aggregation step. Cross-encoder:
-`cross-encoder/ms-marco-MiniLM-L-6-v2` (FR-016). Re-ran
-`eval_rag.py --mode advanced` against the 25-row golden set:
+Two cross-encoder families wired into `retrieve_service` between the
+30-hit stage-1 query and the parent-aggregation step, each tested on
+the same 25-row golden set against the same parent-document corpus.
+Both lose to the no-rerank baseline on every retrieval metric.
 
-| metric        | post-T032 (no rerank) | with rerank | delta   |
-|---------------|-----------------------|-------------|---------|
-| `hit_at_5`    | 0.7067                | 0.5600      | **-0.1467** |
-| `mrr_at_10`   | 0.5893                | 0.5207      | **-0.0687** |
-| `ndcg`        | 0.5620                | 0.4529      | **-0.1091** |
+| metric        | post-T032 (no rerank) | rerank attempt 1: `cross-encoder/ms-marco-MiniLM-L-6-v2` | rerank attempt 2: `BAAI/bge-reranker-base` |
+|---------------|-----------------------|--------|--------|
+| `hit_at_5`    | **0.7067**            | 0.5600 (Δ **-0.1467**)  | 0.5200 (Δ **-0.1867**)  |
+| `mrr_at_10`   | **0.5893**            | 0.5207 (Δ **-0.0687**)  | 0.4500 (Δ **-0.1393**)  |
+| `ndcg`        | **0.5620**            | 0.4529 (Δ **-0.1091**)  | 0.3978 (Δ **-0.1642**)  |
+| rerank latency (30 candidates, CPU) | n/a | ~0.5s | **~25s** |
 
-Rerank breaches every metric. Per T033 protocol ("if it doesn't
-beat, revert the service change in the same commit"), the wiring
-is removed; `app/infra/reranker_client.py` and the `/rerank`
-endpoint stay in the repo for future re-evaluation but
-`retrieve_service` no longer calls them.
+Per T033 protocol ("if it doesn't beat, revert the service change
+in the same commit"), the wiring is removed both times.
+`app/infra/reranker_client.py` and the `/rerank` model-server
+endpoint stay in the repo for future re-evaluation.
 
-**Why the cross-encoder hurts on this corpus** (hypothesis, recorded
-so a future re-evaluation knows what to look for):
+**Attempt 1 — `cross-encoder/ms-marco-MiniLM-L-6-v2`.** Picked first
+because it is the canonical small cross-encoder cited by the
+sentence-transformers reranking docs. Hypothesis for the regression
+was **domain mismatch** — MS MARCO trains on conversational web-search
+queries, whereas the golden set is full of pandas-specific
+vocabulary (`SettingWithCopyWarning`, `DataFrame.groupby`,
+`dtype='Int64'`, `tz_localize`). The training distribution gap was
+plausibly demoting the actually-relevant parents.
 
-1. **Domain mismatch.** `ms-marco-MiniLM-L-6-v2` was trained on the
-   MS MARCO web-search dataset — short conversational queries
-   against web-page passages. The golden set's questions are
-   maintainer-style with pandas-specific vocabulary
-   (`SettingWithCopyWarning`, `DataFrame.groupby`, `dtype='Int64'`).
-   The cross-encoder's representation of those tokens is weaker
-   than the bge-base-en-v1.5 dense embedding's, so reranking by it
-   demotes the actually-relevant parents.
-2. **Pre-rerank ranking is already strong.** The dense first-stage
-   already places a golden parent in the top-5 for 70% of
-   questions; the reranker has little headroom to improve on that
-   and can easily make it worse by promoting a different
+**Attempt 2 — `BAAI/bge-reranker-base`.** Picked specifically to
+remove the domain-mismatch hypothesis: same family as the
+`BAAI/bge-base-en-v1.5` dense embedding model already in use, which
+means the cross-encoder's token vocabulary is the same as the
+embedding's, and the training data covers a broader / more
+technical corpus. **The result is WORSE on every metric.**
+
+**Why both reranker families hurt — the surviving hypotheses:**
+
+1. **Pre-rerank ranking is already strong on this corpus.** The
+   dense first-stage places a golden parent in the top-5 for 70%
+   of questions; the reranker has little headroom to improve on
+   that and can easily make it worse by promoting a different
    passage-shape match.
-3. **Parent vs. child mismatch.** The cross-encoder scored
-   400-char child chunks, but the eval is in parent space — so
-   even a "correct" child rerank could promote a parent whose
-   max-scoring child is from a different topical thread.
+2. **Parent vs. child mismatch.** Both rerankers score 400-char
+   child chunks, but the eval (and the surfaced response) is in
+   parent space. A "correct" child rerank can promote a parent
+   whose max-scoring child belongs to a different topical thread
+   than the question wants — and the dense first-stage's score
+   was already a good proxy for parent-level relevance.
+3. **Score-scale collision with the parent aggregation.** The
+   cross-encoder scores are absolute and unbounded (no softmax),
+   so the parent-level max-aggregation amplifies small per-child
+   noise into large per-parent rank shifts. The dense cosine score
+   sits in a tighter range and is less prone to this. Swapping
+   `max` for a calibrated aggregation (e.g. mean of top-2 children
+   per parent) is the next thing to try if a future iteration
+   wants to revisit rerank.
+4. **The bge-reranker's CPU latency is also disqualifying.** ~25s
+   per 30-candidate batch on CPU is well above the p95-latency
+   budget for `/retrieve` (SC-001 sets 2s); even if it had won on
+   metrics, ship-ability would require a GPU or a smaller bge
+   variant.
 
-**Trigger to re-evaluate:** swap to a more-pandas-tuned
-cross-encoder (e.g. one fine-tuned on stackoverflow Python Q&A or
-on a code-aware corpus like CodeSearchNet), OR run the rerank step
-*after* parent aggregation (rerank the top-N parents with their
-full ≈2000-char text) instead of before. Either is a one-line
-change in `retrieve_service`.
+**Triggers to re-evaluate:**
 
-Source: `/tmp/rag_eval/advanced_t033.json` for the with-rerank
-numbers (not committed; the post-T032 numbers in
-`evals/reports/{run_ts}/rag.json` are the live state).
+- Train (or find) a domain-tuned cross-encoder on
+  pandas/stackoverflow Q&A pairs.
+- Move rerank *after* parent aggregation (rerank the top-N parents
+  with their full ≈2000-char text), so the rerank sees the same
+  granularity as the eval — one-line change in `retrieve_service`.
+- Try a different aggregation (mean-of-top-2 children per parent)
+  before re-introducing rerank, in case the score-scale problem is
+  the dominant issue.
+
+Sources: `/tmp/rag_eval/advanced_t033.json` (attempt 1) and
+`/tmp/rag_eval/advanced_t033_v2.json` (attempt 2). Neither is
+committed; the post-T032 numbers in
+`evals/reports/{run_ts}/rag.json` are the live state.
 
 ## RAG HyDE (T034) — DROPPED pending Anthropic key
 

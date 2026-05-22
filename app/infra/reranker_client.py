@@ -26,8 +26,10 @@ from app.infra.model_server_client import (
 )
 
 # Reranker forward-pass over 30 candidates takes longer than a single
-# embedding; give it a wider budget than the default 5s.
-RERANK_TIMEOUT_SECONDS = 15.0
+# embedding; give it a wider budget than the default 5s. BAAI/bge-reranker-base
+# (~110M params) on CPU takes ~25s for 30 candidates — set 60s to leave
+# headroom; the api router's overall timeout still bounds the request.
+RERANK_TIMEOUT_SECONDS = 60.0
 
 
 def _endpoint() -> str:
