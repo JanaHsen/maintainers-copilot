@@ -12,12 +12,21 @@ Docker + docker-compose, `uv`, `curl`; a GitHub PAT (public-repo read) and
 
 ```bash
 cp .env.example .env
-# edit .env: set VAULT_DEV_ROOT_TOKEN_ID to any dev string (e.g. root)
-docker-compose up -d            # builds the image; vault-seed -> migrate -> api
+# edit .env BEFORE first stack-up:
+#   - VAULT_DEV_ROOT_TOKEN_ID = any dev string (e.g. root)
+#   - BOOTSTRAP_ADMIN_EMAIL   = the email of the first admin (Part 1 Fix 2)
+#   - BOOTSTRAP_ADMIN_PASSWORD = the password for that admin
+# The placeholders that ship in .env.example MUST be changed before any real
+# deploy — they are visible in version control. The admin-bootstrap container
+# is idempotent, but it reads whatever is in Vault on FIRST run; subsequent
+# runs preserve that admin's credentials even if .env changes.
+docker-compose up -d            # builds the image; vault-seed -> migrate -> admin-bootstrap -> api
 ```
 
 `vault-seed` (one-shot) seeds Vault, `migrate` runs `alembic upgrade head`
-and exits 0, then `api` starts once every dependency is healthy.
+and exits 0, `admin-bootstrap` creates the first admin user from the Vault
+credentials (no-op if an admin already exists), then `api` starts once every
+dependency is healthy.
 
 ```bash
 docker-compose ps                       # vault-seed/migrate Exited(0); rest healthy
@@ -60,6 +69,65 @@ docker-compose exec api alembic upgrade head && docker-compose restart api
 docker-compose down       # keep volumes
 docker-compose down -v    # also drop pg/minio data (clean slate)
 ```
+
+## Known issues, deferred
+
+Two issues identified during Part 1 that have known follow-up slices rather
+than in-Part fixes:
+
+### Host-shell `pytest` failures + narrow CI test coverage
+
+`tests/services/test_retrieve_service.py::test_happy_path_returns_chunks`
+fails when run directly from the host (WSL terminal) because the dev venv
+cannot resolve the Docker network hostname `vault:8200`. The same test
+passes when run inside the api container.
+
+**Workaround for local dev:**
+
+```bash
+docker-compose exec api pytest tests/services/test_retrieve_service.py
+```
+
+…or run from the host with the host-facing endpoints injected:
+
+```bash
+VAULT_ADDR=http://localhost:8200 POSTGRES_HOST=localhost REDIS_HOST=localhost \
+  MINIO_HOST=localhost MODEL_SERVER_HOST=localhost \
+  uv run pytest tests/services/test_retrieve_service.py
+```
+
+**The broader issue.** The CI workflow at `.github/workflows/ci.yml` runs
+`uv run pytest` against exactly four files: `test_log_redaction.py` (Rule 7),
+`test_refuse_to_boot.py` (Rule 4), `model_server/test_boot_check.py`
+(Rule 4), and `test_eval_classification.py` (Rule 5). The constitutional
+rules and eval gates are covered, but the wider unit / service / repository
+/ router / integration suite — including every test added in
+`002-chatbot-part1-foundations` — is **not exercised in CI**. Feature-level
+regressions could slip through unless an operator runs the wider suite
+manually.
+
+**Tracked as a follow-up:** CI-expansion slice. Will widen the pytest call
+to include `tests/api/`, `tests/services/`, `tests/repositories/`,
+`tests/infra/`, `tests/integration/`, `tests/bootstrap/`, plus the
+container-side network configuration needed for those tests to reach the
+dev compose stack.
+
+### `audit_log REVOKE UPDATE,DELETE` bypassed by Postgres superuser
+
+Migration 0003 issues `REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC` so
+the audit log is structurally append-only. The dev compose Postgres
+connection uses the `postgres` superuser role, which bypasses every REVOKE
+rule. The protection is symbolic in the dev environment — the
+`AuditLogImmutableError` raised by `audit_repository.update()` /
+`audit_repository.delete()` does enforce the contract at the application
+layer, but raw-SQL UPDATEs from the dev role succeed.
+
+**Tracked as a follow-up:** security-hardening slice. Production
+deployments must use a least-privilege application role (`INSERT` and
+`SELECT` only on `audit_log`, no `UPDATE` / `DELETE`) before the gate
+bites. The application connection string then resolves to that role via
+Vault; the superuser role stays only for `migrate` and `vault-seed`
+one-shots.
 
 ## Dataset pipeline (host)
 
