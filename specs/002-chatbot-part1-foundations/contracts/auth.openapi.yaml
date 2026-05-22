@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info:
+  title: Maintainer's Copilot — Auth API
+  version: 0.1.0
+  description: |
+    fastapi-users routes wired in app/api/routers/auth.py. The signing key
+    for JWT lives in Vault at key `auth_jwt_secret` (research R2). The JWT
+    is set as an HTTP-only cookie named `mc_session`.
+
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new maintainer account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+        '400':
+          description: Validation error (weak password, malformed email).
+        '409':
+          description: Email already registered.
+
+  /auth/login:
+    post:
+      summary: Sign in with email + password. Sets the `mc_session` HTTP-only cookie.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username: { type: string, format: email }
+                password: { type: string, format: password }
+              required: [username, password]
+      responses:
+        '204':
+          description: Signed in; cookie set.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: mc_session=<JWT>; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600
+        '400':
+          description: Bad credentials.
+
+  /auth/logout:
+    post:
+      summary: Sign out. Clears the `mc_session` cookie.
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Signed out.
+        '401':
+          description: No active session.
+
+  /users/me:
+    get:
+      summary: Profile of the currently signed-in maintainer.
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+        '401':
+          description: Not authenticated.
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: mc_session
+      description: HTTP-only cookie holding the fastapi-users JWT.
+  schemas:
+    UserRead:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        is_active: { type: boolean }
+        is_superuser: { type: boolean }
+        is_verified: { type: boolean }
+        role:
+          type: string
+          enum: [user, admin]
+      required: [id, email, is_active, is_superuser, is_verified, role]
+    UserCreate:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+      required: [email, password]
