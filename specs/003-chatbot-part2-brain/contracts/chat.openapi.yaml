@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: Maintainer's Copilot — Chat API
+  version: 0.2.0
+  description: |
+    Two endpoints. `/chat` for authed Streamlit users; `/widget/chat` for
+    anonymous widget visitors. Both drive the same agent loop in
+    `app/services/chatbot_service.py`. Long-term memory tools refuse for
+    widget actors; the agent surfaces a sanitized refusal.
+
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /chat:
+    post:
+      summary: One turn of an authed maintainer's conversation.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequestAuthed'
+      responses:
+        '200':
+          description: Assistant turn produced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '401':
+          description: No session.
+        '422':
+          description: Malformed body.
+        '502':
+          description: Anthropic returned an unexpected body or 5xx.
+        '503':
+          description: Anthropic unreachable / auth error.
+        '504':
+          description: Anthropic timeout.
+
+  /widget/chat:
+    post:
+      summary: One turn of a widget-session conversation (anonymous visitor).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequestWidget'
+      parameters:
+        - in: header
+          name: X-Widget-Token
+          required: true
+          schema:
+            type: string
+          description: The widget's host token (plaintext; sha256-compared server-side).
+        - in: header
+          name: Origin
+          required: false
+          schema:
+            type: string
+          description: Browser-provided origin; checked against widget.allowed_origins.
+      responses:
+        '200':
+          description: Assistant turn produced (may include a sanitized refusal of memory tools).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '401':
+          description: X-Widget-Token unknown or revoked.
+        '403':
+          description: Origin not in widget.allowed_origins.
+        '422':
+          description: Malformed body.
+        '502':
+          description: Anthropic returned an unexpected body or 5xx.
+        '503':
+          description: Anthropic unreachable / auth error.
+        '504':
+          description: Anthropic timeout.
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: mc_session
+  schemas:
+    ChatRequestAuthed:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Existing conversation to continue, or null to start a new one.
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+      required: [message]
+
+    ChatRequestWidget:
+      type: object
+      properties:
+        widget_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+      required: [widget_id, session_id, message]
+
+    ToolTraceEntry:
+      type: object
+      properties:
+        tool_name:
+          type: string
+          enum: [classify_issue, extract_entities, summarize_issue, retrieve_context, write_memory, recall_memory]
+        input: { type: object }
+        output: { type: object }
+        latency_ms: { type: integer }
+        is_error: { type: boolean }
+      required: [tool_name, input, output, latency_ms, is_error]
+
+    ChatResponse:
+      type: object
+      properties:
+        assistant_message: { type: string }
+        conversation_id: { type: string, format: uuid }
+        tool_trace:
+          type: array
+          items: { $ref: '#/components/schemas/ToolTraceEntry' }
+        request_id: { type: string }
+        trace_id: { type: string }
+      required: [assistant_message, conversation_id, tool_trace, request_id, trace_id]
