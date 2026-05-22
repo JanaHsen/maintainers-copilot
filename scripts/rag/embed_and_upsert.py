@@ -32,6 +32,10 @@ logger = logging.getLogger("rag.embed_and_upsert")
 EMBEDDING_MODEL_ID = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
 DEFAULT_BATCH_SIZE = 64
+# Number of parents processed per embed+upsert chunk. Keeps peak RAM
+# bounded so the full pandas corpus (~46k parents, ~78k children, ~480MB
+# of f32 vectors at once) doesn't OOM on a memory-constrained host.
+DEFAULT_UPSERT_BATCH_PARENTS = 250
 
 # Parents and children get separate INSERT statements: parent rows
 # always have NULL embedding, child rows always have a literal vector.
@@ -101,77 +105,122 @@ class Embedder:
         return [list(map(float, row)) for row in vectors]
 
 
-def upsert(parents: list[ParentChunk], embedder: Embedder | None = None) -> dict[str, int]:
-    """Bulk-upsert a list of parent + child rows; embedding the children in batches.
+def _parent_row(parent: ParentChunk) -> dict[str, Any]:
+    return {
+        "id": parent.id,
+        "parent_id": parent.id,
+        "content": parent.content,
+        "source_type": parent.source_type,
+        "source_id": parent.source_id,
+        "source_timestamp": parent.source_timestamp,
+        "section_path": parent.section_path,
+        "child_index": 0,
+        "parent_index": parent.parent_index,
+        "corpus_run_id": parent.corpus_run_id,
+    }
 
-    Returns a counts dict: ``{"parents_inserted", "children_inserted",
-    "parents_skipped", "children_skipped"}`` — "skipped" counts the
-    ``ON CONFLICT DO NOTHING`` no-ops (idempotent re-run).
+
+def _child_row(
+    parent: ParentChunk, child: Any, embedding: list[float]
+) -> dict[str, Any]:
+    return {
+        "id": child.id,
+        "parent_id": child.parent_id,
+        "content": child.content,
+        "embedding_str": _vec_to_pg_str(embedding),
+        "source_type": parent.source_type,
+        "source_id": parent.source_id,
+        "source_timestamp": parent.source_timestamp,
+        "section_path": child.section_path,
+        "child_index": child.child_index,
+        "parent_index": parent.parent_index,
+        "corpus_run_id": parent.corpus_run_id,
+    }
+
+
+def upsert(
+    parents: list[ParentChunk],
+    embedder: Embedder | None = None,
+    upsert_batch_parents: int = DEFAULT_UPSERT_BATCH_PARENTS,
+) -> dict[str, int]:
+    """Stream-embed + bulk-upsert parents + children, bounding peak memory.
+
+    Materializing all ~78k child embeddings at once (480MB+ of f32 vectors
+    plus the serialized embedding strings) OOMs on a 4GB-class WSL host.
+    Instead we walk ``parents`` in slabs of ``upsert_batch_parents``,
+    embed only that slab's children, INSERT, and drop the buffers before
+    moving on. Peak RAM stays at a few tens of MB per slab.
+
+    Returns the same counts dict as before:
+    ``{"parents_inserted", "children_inserted", "parents_skipped",
+    "children_skipped"}``. "skipped" counts the ``ON CONFLICT DO NOTHING``
+    no-ops (idempotent re-run).
     """
     embedder = embedder or Embedder()
-    child_texts: list[str] = []
-    child_keys: list[tuple[str, str]] = []  # (parent.id, child.id) for stable join after encode
-    for parent in parents:
-        for child in parent.children:
-            child_texts.append(child.content)
-            child_keys.append((parent.id, child.id))
-
+    n_children_total = sum(len(p.children) for p in parents)
     logger.info(
-        "embedding %d child chunks across %d parents (model=%s)",
-        len(child_texts),
+        "embedding %d child chunks across %d parents (model=%s, slab=%d parents)",
+        n_children_total,
         len(parents),
         embedder.model_id,
+        upsert_batch_parents,
     )
-    vectors = embedder.encode_batch(child_texts) if child_texts else []
-    embedding_by_child: dict[str, list[float]] = dict(
-        zip([c for _, c in child_keys], vectors, strict=True)
-    )
-
-    parent_rows: list[dict[str, Any]] = []
-    child_rows: list[dict[str, Any]] = []
-    for parent in parents:
-        parent_rows.append(
-            {
-                "id": parent.id,
-                "parent_id": parent.id,
-                "content": parent.content,
-                "source_type": parent.source_type,
-                "source_id": parent.source_id,
-                "source_timestamp": parent.source_timestamp,
-                "section_path": parent.section_path,
-                "child_index": 0,
-                "parent_index": parent.parent_index,
-                "corpus_run_id": parent.corpus_run_id,
-            }
-        )
-        for child in parent.children:
-            child_rows.append(
-                {
-                    "id": child.id,
-                    "parent_id": child.parent_id,
-                    "content": child.content,
-                    "embedding_str": _vec_to_pg_str(embedding_by_child[child.id]),
-                    "source_type": parent.source_type,
-                    "source_id": parent.source_id,
-                    "source_timestamp": parent.source_timestamp,
-                    "section_path": child.section_path,
-                    "child_index": child.child_index,
-                    "parent_index": parent.parent_index,
-                    "corpus_run_id": parent.corpus_run_id,
-                }
-            )
 
     engine = get_engine()
-    with engine.begin() as conn:
-        # SQLAlchemy returns rowcount as the number of rows actually touched;
-        # with ON CONFLICT DO NOTHING that's the number of *new* rows inserted.
-        parent_result = conn.execute(INSERT_PARENT_SQL, parent_rows) if parent_rows else None
-        child_result = conn.execute(INSERT_CHILD_SQL, child_rows) if child_rows else None
-    parents_inserted = parent_result.rowcount if parent_result is not None else 0
-    children_inserted = child_result.rowcount if child_result is not None else 0
+    parents_inserted = 0
+    parents_skipped = 0
+    children_inserted = 0
+    children_skipped = 0
+
+    for slab_start in range(0, len(parents), upsert_batch_parents):
+        slab = parents[slab_start : slab_start + upsert_batch_parents]
+
+        parent_rows = [_parent_row(p) for p in slab]
+
+        child_pairs: list[tuple[ParentChunk, Any]] = []
+        for p in slab:
+            for c in p.children:
+                child_pairs.append((p, c))
+
+        if child_pairs:
+            texts = [c.content for _, c in child_pairs]
+            vectors = embedder.encode_batch(texts)
+            child_rows = [
+                _child_row(parent, child, vec)
+                for (parent, child), vec in zip(child_pairs, vectors, strict=True)
+            ]
+            del texts, vectors
+        else:
+            child_rows = []
+
+        with engine.begin() as conn:
+            if parent_rows:
+                pres = conn.execute(INSERT_PARENT_SQL, parent_rows)
+                pinserted = pres.rowcount or 0
+                parents_inserted += pinserted
+                parents_skipped += len(parent_rows) - pinserted
+            if child_rows:
+                cres = conn.execute(INSERT_CHILD_SQL, child_rows)
+                cinserted = cres.rowcount or 0
+                children_inserted += cinserted
+                children_skipped += len(child_rows) - cinserted
+
+        logger.info(
+            "slab %d-%d done: parents=%d children=%d (cum: p_ins=%d p_skip=%d c_ins=%d c_skip=%d)",
+            slab_start,
+            slab_start + len(slab),
+            len(slab),
+            len(child_pairs),
+            parents_inserted,
+            parents_skipped,
+            children_inserted,
+            children_skipped,
+        )
+        del parent_rows, child_rows, child_pairs
+
     return {
         "parents_inserted": parents_inserted,
         "children_inserted": children_inserted,
-        "parents_skipped": len(parent_rows) - parents_inserted,
-        "children_skipped": len(child_rows) - children_inserted,
+        "parents_skipped": parents_skipped,
+        "children_skipped": children_skipped,
     }
