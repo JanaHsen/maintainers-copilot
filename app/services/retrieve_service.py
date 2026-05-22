@@ -102,6 +102,12 @@ def retrieve(
 
     corpus_run_id = get_settings().rag_corpus_run_id
 
+    # T034 — HyDE wiring was tested and DROPPED in this environment
+    # (Anthropic key is `n/a` in Vault → 100% fallback to raw
+    # question, no usable delta). See DECISIONS.md
+    # "## RAG HyDE (T034) — DROPPED pending Anthropic key".
+    # `app/services/hyde_service.py` stays in the repo for future use.
+
     try:
         query_embedding = embedding_client.embed(req.question, request_id=request_id)
     except ModelServerError as exc:

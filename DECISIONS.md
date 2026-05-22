@@ -568,3 +568,55 @@ change in `retrieve_service`.
 Source: `/tmp/rag_eval/advanced_t033.json` for the with-rerank
 numbers (not committed; the post-T032 numbers in
 `evals/reports/{run_ts}/rag.json` are the live state).
+
+## RAG HyDE (T034) — DROPPED pending Anthropic key
+
+`prompts/hyde.md` is committed with a version-stamped two-section
+(System / User) prompt that asks Claude Haiku for a pandas-canonical
+hypothetical answer; `app/services/hyde_service.py` already loads it
+and handles fallbacks per FR-017 (short-generation floor + any
+`AnthropicError` falls back to the raw question with the boolean in
+the response).
+
+The wiring was added to `retrieve_service.retrieve()` between the
+incoming question and the embedding call, then reverted in the same
+commit per T034 protocol. **Reason for the revert:** the Anthropic
+API key is set to `n/a` in this environment's Vault (see
+`docker compose exec vault vault kv get secret/maintainers-copilot`),
+so every HyDE generation raised `AnthropicAuthError` and fell back
+100% — the test was structurally unable to evaluate HyDE.
+
+| metric        | post-T032 (no HyDE) | HyDE-wired (100% fallback) | delta   |
+|---------------|---------------------|-----------------------------|---------|
+| `hit_at_5`    | 0.7067              | 0.7067                       | +0.0000 |
+| `mrr_at_10`   | 0.5893              | 0.5693                       | -0.0200 |
+| `ndcg`        | 0.5620              | 0.5530                       | -0.0090 |
+
+The MRR / nDCG dip is **ANN noise** — pgvector's ivfflat index
+(`lists=100`) gives slightly different top-30 orderings across calls
+when the index hasn't been re-clustered between runs. With every
+HyDE call falling back to the raw question, the embedding inputs are
+identical to T032; only the index's approximate-nearest-neighbor
+ordering changed. The noise floor for this corpus is on the order
+of 0.02 on MRR — single-question rank shifts in the bottom of the
+top-30 can flip a few golden hits in or out of top-5.
+
+**Decision: revert the wiring.** Per strict T034 protocol ("if it
+doesn't beat, revert the wiring in the same commit"), the
+`retrieve_service` change is removed. `prompts/hyde.md` and
+`hyde_service.py` stay in the repo — they parse cleanly and the
+service's fallback contract is honoured, so once the operator sets
+a real `anthropic_api_key` in Vault, **one line of code** (re-add
+`hyde_service.transform(...)` ahead of the embed call) re-enables
+HyDE and a re-run produces a meaningful delta number.
+
+**Trigger to re-evaluate:** operator runs
+`docker compose exec vault sh -c 'VAULT_TOKEN=root VAULT_ADDR=http://localhost:8200 vault kv patch secret/maintainers-copilot anthropic_api_key=sk-…'`
+then re-runs `evals/rag/eval_rag.py --mode advanced` with the HyDE
+wiring restored. If hit_at_5 improves by ≥ 2pp (above the ANN noise
+floor), keep HyDE; otherwise the dropped state stands and a
+DECISIONS.md follow-up records the negative real-API result.
+
+Source: `/tmp/rag_eval/advanced_t034.json` for the fallback-mode
+numbers; api log line "HyDE generation failed (anthropic_api_key is
+empty in Vault…)" confirms the 100% fallback.
