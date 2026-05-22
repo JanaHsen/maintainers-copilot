@@ -122,13 +122,16 @@ def retrieve(
         corpus_run_id=corpus_run_id,
     )
 
+    # T033 — Cross-encoder rerank was tested and DROPPED (DECISIONS.md
+    # "## RAG cross-encoder rerank (T033) — DROPPED"). The reranker
+    # client is still in the repo for FR-016 / future re-evaluation;
+    # this service skips it.
+
     # T031 — Advanced choice 1: parent-document chunking. Aggregate the
     # 30 child hits by parent_id using the MAX child score (R2), then
     # fetch and return the top-k unique PARENT chunks.
     parent_scores: dict[str, float] = {}
     parent_meta: dict[str, dict[str, str]] = {}
-    parent_source_type: dict[str, str] = {}
-    parent_source_id: dict[str, str] = {}
     for h in hits:
         if h.parent_id not in parent_scores or h.score > parent_scores[h.parent_id]:
             parent_scores[h.parent_id] = h.score
@@ -137,8 +140,6 @@ def retrieve(
                 "section_path": h.section_path,
                 "corpus_run_id": corpus_run_id,
             }
-            parent_source_type[h.parent_id] = h.source_type
-            parent_source_id[h.parent_id] = h.source_id
 
     ranked_parent_ids = sorted(
         parent_scores, key=lambda pid: parent_scores[pid], reverse=True

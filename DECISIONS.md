@@ -517,3 +517,54 @@ proper BM25 (`pgvector_bm25` extension or a separate index) before
 re-tuning α.
 
 Source: `evals/rag/alpha_sweep.json`.
+
+## RAG cross-encoder rerank (T033) — DROPPED
+
+Wired `reranker_client.rerank` into `retrieve_service` between the
+30-hit stage-1 query and the parent-aggregation step. Cross-encoder:
+`cross-encoder/ms-marco-MiniLM-L-6-v2` (FR-016). Re-ran
+`eval_rag.py --mode advanced` against the 25-row golden set:
+
+| metric        | post-T032 (no rerank) | with rerank | delta   |
+|---------------|-----------------------|-------------|---------|
+| `hit_at_5`    | 0.7067                | 0.5600      | **-0.1467** |
+| `mrr_at_10`   | 0.5893                | 0.5207      | **-0.0687** |
+| `ndcg`        | 0.5620                | 0.4529      | **-0.1091** |
+
+Rerank breaches every metric. Per T033 protocol ("if it doesn't
+beat, revert the service change in the same commit"), the wiring
+is removed; `app/infra/reranker_client.py` and the `/rerank`
+endpoint stay in the repo for future re-evaluation but
+`retrieve_service` no longer calls them.
+
+**Why the cross-encoder hurts on this corpus** (hypothesis, recorded
+so a future re-evaluation knows what to look for):
+
+1. **Domain mismatch.** `ms-marco-MiniLM-L-6-v2` was trained on the
+   MS MARCO web-search dataset — short conversational queries
+   against web-page passages. The golden set's questions are
+   maintainer-style with pandas-specific vocabulary
+   (`SettingWithCopyWarning`, `DataFrame.groupby`, `dtype='Int64'`).
+   The cross-encoder's representation of those tokens is weaker
+   than the bge-base-en-v1.5 dense embedding's, so reranking by it
+   demotes the actually-relevant parents.
+2. **Pre-rerank ranking is already strong.** The dense first-stage
+   already places a golden parent in the top-5 for 70% of
+   questions; the reranker has little headroom to improve on that
+   and can easily make it worse by promoting a different
+   passage-shape match.
+3. **Parent vs. child mismatch.** The cross-encoder scored
+   400-char child chunks, but the eval is in parent space — so
+   even a "correct" child rerank could promote a parent whose
+   max-scoring child is from a different topical thread.
+
+**Trigger to re-evaluate:** swap to a more-pandas-tuned
+cross-encoder (e.g. one fine-tuned on stackoverflow Python Q&A or
+on a code-aware corpus like CodeSearchNet), OR run the rerank step
+*after* parent aggregation (rerank the top-N parents with their
+full ≈2000-char text) instead of before. Either is a one-line
+change in `retrieve_service`.
+
+Source: `/tmp/rag_eval/advanced_t033.json` for the with-rerank
+numbers (not committed; the post-T032 numbers in
+`evals/reports/{run_ts}/rag.json` are the live state).
