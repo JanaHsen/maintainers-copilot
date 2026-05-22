@@ -376,3 +376,48 @@ Sources:
   s3://maintainers-copilot/artifacts/classifier/distilbert/20260520T193153Z/
 - Haiku: report.json at
   s3://maintainers-copilot/artifacts/llm_baseline/20260520T234329Z/
+
+## RAG naive baseline
+
+Frozen baseline numbers committed at `evals/rag/baseline.json` so each
+of the four advanced design choices (T031-T034) can cite a fixed
+comparison point per FR-020 / Rule 6.
+
+| field                       | value                                                              |
+|-----------------------------|--------------------------------------------------------------------|
+| `corpus_run_id`             | `v1-full-20260521T2327Z`                                           |
+| `pipeline_config.chunking`  | `naive_fixed_400` (children of the parent_document corpus used as flat chunks) |
+| `pipeline_config.hybrid_alpha`     | `1.0` (dense-only, no sparse)                               |
+| `pipeline_config.first_stage_k`    | `30`                                                         |
+| `pipeline_config.rerank_top_k`     | `5`                                                          |
+| `pipeline_config.hyde_enabled`     | `false`                                                      |
+| `pipeline_config.parent_aggregation` | `null` (top-k children → dedup'd parent_ids in order)      |
+| `n_examples`                | `25`                                                               |
+| `retrieval.hit_at_5`        | **0.7067**                                                         |
+| `retrieval.mrr_at_10`       | **0.5893**                                                         |
+| `retrieval.ndcg`            | **0.5620**                                                         |
+
+Notes:
+
+- The baseline runs against the same parent-document corpus the
+  advanced pipeline will run against. The "naive" difference is the
+  *retrieval shape*: dense-only first-stage with no rerank/HyDE/
+  aggregation. Building a separately-chunked naive corpus (per
+  `--strategy naive` in T011) was rejected because it would
+  conflate "chunking strategy" with "pipeline complexity" — and
+  T031 specifically isolates the chunking-strategy delta against a
+  fixed corpus.
+- The corpus already contains held-out resolved issues with
+  maintainer responses (corpus-build skipped the classifier
+  train/val/test issue numbers; verified by
+  `excluded_issue_numbers.txt`), so the eval is independent of the
+  classifier's gold splits (SC-005).
+- `golden_set_hash` in `baseline.json` pins which `golden.jsonl`
+  these numbers correspond to; the report includes it so any
+  downstream comparison against a future golden set produces an
+  obvious provenance mismatch instead of silent drift.
+
+Each subsequent advanced commit (T031 parent-document chunking, T032
+hybrid α sweep, T033 cross-encoder rerank, T034 HyDE) records its own
+delta vs these four numbers and keeps or drops the change accordingly
+(FR-020).

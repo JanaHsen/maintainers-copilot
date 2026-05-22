@@ -1,0 +1,432 @@
+{
+  "corpus_run_id": "v1-full-20260521T2327Z",
+  "generation": {},
+  "golden_set_hash": "0e8b158ec0b301b1f0d4dea59a12e9ac555b75167fa309f5cc3d584bc8783c16",
+  "mode": "naive",
+  "n_examples": 25,
+  "pipeline_config": {
+    "chunking": "naive_fixed_400",
+    "embedding_model_id": "BAAI/bge-base-en-v1.5",
+    "first_stage_k": 30,
+    "hybrid_alpha": 1.0,
+    "hyde_enabled": false,
+    "parent_aggregation": null,
+    "rerank_top_k": 5
+  },
+  "predictions": [
+    {
+      "first_correct_rank": 4,
+      "ground_truth_chunk_ids": [
+        "053afb4744a649aa9c6bc02f68",
+        "390e0236f73157c77ce4a51c4b",
+        "3ce2cbfc3628ff88b513d6482b"
+      ],
+      "question": "How do I group a DataFrame by date and aggregate values per group?",
+      "question_id": "q01",
+      "retrieved_chunk_ids": [
+        "416b97aaf6aca8a886b76ae8cd",
+        "818cb7174168945142cd33153c",
+        "b0b34851fd5e5c6afc2ebadad7",
+        "3ce2cbfc3628ff88b513d6482b",
+        "81b51365963038538663220f18"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "45385f210f3b9f6813a8358318",
+        "496cb25dfcc9f4fd1d2b291002"
+      ],
+      "question": "What is the difference between .loc and .iloc when selecting rows?",
+      "question_id": "q02",
+      "retrieved_chunk_ids": [
+        "496cb25dfcc9f4fd1d2b291002",
+        "cd5ac7d8900e242830d99925c7",
+        "e31afd741f9d119b2cbfe02367",
+        "45385f210f3b9f6813a8358318",
+        "1dec8667f702e6a4a1d7f0b960"
+      ]
+    },
+    {
+      "first_correct_rank": 4,
+      "ground_truth_chunk_ids": [
+        "e2819ee4109fb74c994aab3626",
+        "f16e8c2c7726ceaf8f09a56669"
+      ],
+      "question": "What does the SettingWithCopyWarning mean and how do I fix it?",
+      "question_id": "q03",
+      "retrieved_chunk_ids": [
+        "78c314ead387d9ba7d688ce6ed",
+        "c169319fdf4266cc572f1b5897",
+        "a1d56bc32dc8d0670cfda2db47",
+        "e2819ee4109fb74c994aab3626",
+        "f16e8c2c7726ceaf8f09a56669"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "15bb6deb33aeddb89e586159a0",
+        "60d5331c5a7f6ee37a8a606a3c",
+        "c7b3ff0112d907058681612547"
+      ],
+      "question": "How do I resample a time-series to monthly frequency?",
+      "question_id": "q04",
+      "retrieved_chunk_ids": [
+        "c7b3ff0112d907058681612547",
+        "34fcaf1035eabc9895d49a8315",
+        "59524a8b2d92845dd8c40cdd14",
+        "15bb6deb33aeddb89e586159a0",
+        "8cf625abce983fe2e368cfc99f"
+      ]
+    },
+    {
+      "first_correct_rank": 4,
+      "ground_truth_chunk_ids": [
+        "29a9e41b9d7b67a4c4266b7e92",
+        "8f44158b7ece50ab181d2fe776",
+        "fdbe3d3c1eaee2223fb7964cbc"
+      ],
+      "question": "How do I read a CSV file with a non-comma separator and a custom NA marker?",
+      "question_id": "q05",
+      "retrieved_chunk_ids": [
+        "250d7e15a3304545a3fbc68946",
+        "545eca87762dd6df8873e187b0",
+        "3018b81ce0b77d2622ae0cdac0",
+        "29a9e41b9d7b67a4c4266b7e92",
+        "9d1d82306f118699f8d6da664a"
+      ]
+    },
+    {
+      "first_correct_rank": 5,
+      "ground_truth_chunk_ids": [
+        "33fc4b7fac1caab3836293bc7f",
+        "6f7738fae5808f3a1d54dbaef1",
+        "ce909f22ab5f9276200dc3a2be"
+      ],
+      "question": "How do I create a MultiIndex DataFrame from a list of tuples?",
+      "question_id": "q06",
+      "retrieved_chunk_ids": [
+        "e22d07dc875f80ce612a4e99d5",
+        "3a52cb0d02a8acc1282c39f574",
+        "21ba1feb66782c9adc4197763c",
+        "71959148e49524b9fe1d8da2e9",
+        "33fc4b7fac1caab3836293bc7f"
+      ]
+    },
+    {
+      "first_correct_rank": 3,
+      "ground_truth_chunk_ids": [
+        "0002c5fcd6c4bce258036bbabd",
+        "6f72bc6d2f693cf0405a8c9ff6",
+        "7f58f78d62867e90c4dff1df61"
+      ],
+      "question": "How do I handle timezone conversion when joining two DataFrames whose timestamps are tz-naive on one side and tz-aware on the other?",
+      "question_id": "q07",
+      "retrieved_chunk_ids": [
+        "7bea01ae3b7cae8370974b592e",
+        "551fa755e5a656e1645c1a2b6b",
+        "7f58f78d62867e90c4dff1df61",
+        "09003cb8c213511d69c54a1f30",
+        "0002c5fcd6c4bce258036bbabd"
+      ]
+    },
+    {
+      "first_correct_rank": 9,
+      "ground_truth_chunk_ids": [
+        "262073c381cbe4d5f0f069f955"
+      ],
+      "question": "How do I drop rows that contain any missing values?",
+      "question_id": "q08",
+      "retrieved_chunk_ids": [
+        "a5875561c82035ba3f7a89be0b",
+        "ab113d26a9e92ad9953468e6d5",
+        "f3ffae0bf99bc5770418be8c6a",
+        "35fd1f6df652f3f46f5cd3955a",
+        "a05ef32414765b3229952846aa"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "ef9e01877b913b01b61bfe1c80"
+      ],
+      "question": "What's the difference between merge, join, and concat?",
+      "question_id": "q09",
+      "retrieved_chunk_ids": [
+        "ef9e01877b913b01b61bfe1c80",
+        "0f0bc7e27fd4bf169bd87716ef",
+        "22fe8e578b1afac2703d11b1a5",
+        "bd4d5b555ca41ee88a1c35c011",
+        "4b606d3bca8e7d1364542d7a1c"
+      ]
+    },
+    {
+      "first_correct_rank": 2,
+      "ground_truth_chunk_ids": [
+        "5c3ccaa7136b9845d31fd60288",
+        "dc313bd7f0286b5169bdb008b3",
+        "ff502f30da802e211a76feaf31"
+      ],
+      "question": "How do I convert a string column to the categorical dtype?",
+      "question_id": "q10",
+      "retrieved_chunk_ids": [
+        "5b82575a0b9bf19a5c4d88c5af",
+        "ff502f30da802e211a76feaf31",
+        "b37552967d55c9261d545bdf2b",
+        "5c3ccaa7136b9845d31fd60288",
+        "6eac5e9b166c5a741b2235e41b"
+      ]
+    },
+    {
+      "first_correct_rank": 4,
+      "ground_truth_chunk_ids": [
+        "0f17145f7f568310bfc665eff8",
+        "29a07cae7791ba73c2209d8e49"
+      ],
+      "question": "When should I use apply versus map versus applymap?",
+      "question_id": "q11",
+      "retrieved_chunk_ids": [
+        "2158654f97bbe8203b8f09ae38",
+        "4d1e2197ee3552c58ea5576952",
+        "c4d95b3e6edf54da1877c7b6ae",
+        "29a07cae7791ba73c2209d8e49",
+        "0e17028521d49ef50951c104f9"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "3cc807c2c6ee5a0d6185be8435",
+        "565e2bb334c123325183f708ab",
+        "82c3b27b48941a0697b5b7362c"
+      ],
+      "question": "Why does df.append no longer exist and what should I use instead?",
+      "question_id": "q12",
+      "retrieved_chunk_ids": [
+        "565e2bb334c123325183f708ab",
+        "eb3ae11b5f3113fec049a4dbb2",
+        "38ee704c9a2d425504b896cbc0",
+        "3cc807c2c6ee5a0d6185be8435",
+        "82c3b27b48941a0697b5b7362c"
+      ]
+    },
+    {
+      "first_correct_rank": 3,
+      "ground_truth_chunk_ids": [
+        "4eb0d447cdbcd90a2ae9ee7f7a",
+        "a7a777c71aaeab87261363862d"
+      ],
+      "question": "How do I write extension dtypes (e.g. Int64, string) that handle missing data without converting to float?",
+      "question_id": "q13",
+      "retrieved_chunk_ids": [
+        "b5f1866e97f89410cc4aeb8aab",
+        "cea99d6509eef0843a69aeb25d",
+        "4eb0d447cdbcd90a2ae9ee7f7a",
+        "9618fa01915102adac1a61a11d",
+        "97bc71ee3410d545e51a5739ee"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "8538c6dce6790b97c025e625b5",
+        "8a0d55f227c85973d3a742bb01"
+      ],
+      "question": "How do I plot a DataFrame as a line chart with multiple columns on the same axes?",
+      "question_id": "q14",
+      "retrieved_chunk_ids": [
+        "8538c6dce6790b97c025e625b5",
+        "45f3dea94ebcbefc79de1c90ee",
+        "8a0d55f227c85973d3a742bb01",
+        "240ccd0c74f226414db5e24a11",
+        "1dc05d6a0c4180470bc45204d2"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "5035bcef5074e723b80c1aa21c",
+        "97db5ac09b904c687ae15c6433"
+      ],
+      "question": "How do I compute a rolling mean over a 7-day window on time-series data?",
+      "question_id": "q15",
+      "retrieved_chunk_ids": [
+        "5035bcef5074e723b80c1aa21c",
+        "703ad368af02208b600da83192",
+        "81b51365963038538663220f18",
+        "97db5ac09b904c687ae15c6433",
+        "47d5837e95e383fbc0a256d86c"
+      ]
+    },
+    {
+      "first_correct_rank": 2,
+      "ground_truth_chunk_ids": [
+        "cb3e05067ae23e9461ac61b497",
+        "d0e36ee6c863b87e659e0e22cc"
+      ],
+      "question": "How do I contribute a bug fix to pandas \u2014 what is the dev workflow?",
+      "question_id": "q16",
+      "retrieved_chunk_ids": [
+        "8b9a010ecb5e933a117a70b86f",
+        "cb3e05067ae23e9461ac61b497",
+        "3d9410cc3821f3c4f6bdbf20c5",
+        "b3bc0d5664f2c485a33ddc55b4",
+        "9ac6112de2c7c2be889a51cb81"
+      ]
+    },
+    {
+      "first_correct_rank": 5,
+      "ground_truth_chunk_ids": [
+        "3ce2cbfc3628ff88b513d6482b",
+        "790bd9976c1cabecadbe1e3f10",
+        "8bdd9a21a5c713f7a812b998db"
+      ],
+      "question": "Why does groupby().agg() return a DataFrame with a MultiIndex on the columns when I pass a list of aggregations?",
+      "question_id": "q17",
+      "retrieved_chunk_ids": [
+        "ec3c803af08eb73436b2c8e5ec",
+        "2e0dd7299727bd2d2a2b0d2704",
+        "de89f2d7c190289f6296bd13db",
+        "0f79748978d4a104bf0328b71f",
+        "3ce2cbfc3628ff88b513d6482b"
+      ]
+    },
+    {
+      "first_correct_rank": 3,
+      "ground_truth_chunk_ids": [
+        "d33a763d4194ef9a0c0f88d0a9",
+        "d916b092465bd45aa9c37bff7a"
+      ],
+      "question": "Why do I see a dtype change to float64 after I read a CSV with integer columns that contain missing values?",
+      "question_id": "q18",
+      "retrieved_chunk_ids": [
+        "cea99d6509eef0843a69aeb25d",
+        "0021a60dacb816206da1db6488",
+        "d916b092465bd45aa9c37bff7a",
+        "db4d00a1f86c9e9e78fa4ed1cd",
+        "d33a763d4194ef9a0c0f88d0a9"
+      ]
+    },
+    {
+      "first_correct_rank": 2,
+      "ground_truth_chunk_ids": [
+        "185fecad8c647a5059ff7176b4",
+        "aebee51735a50607075733c54b",
+        "d2bcff59ba177f8c6b5e46bbe8"
+      ],
+      "question": "Why is set_index slow on a large DataFrame and what's the recommended workaround?",
+      "question_id": "q19",
+      "retrieved_chunk_ids": [
+        "c5c3bf341e0af4f1492994f176",
+        "185fecad8c647a5059ff7176b4",
+        "a1d0e903bdf63bd6c3d16797b0",
+        "aebee51735a50607075733c54b",
+        "d2bcff59ba177f8c6b5e46bbe8"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "0d7d08a86c3155a74b2f56c62f",
+        "63f1c3ccf8573a54950818fef2",
+        "f442bbf5fb176f08817c03dbc1"
+      ],
+      "question": "How does pandas decide when to copy versus when to return a view, and why does SettingWithCopyWarning appear?",
+      "question_id": "q20",
+      "retrieved_chunk_ids": [
+        "63f1c3ccf8573a54950818fef2",
+        "0d7d08a86c3155a74b2f56c62f",
+        "853286823fbb5dde5f847c6a52",
+        "06727bf0c0c23554c00d0001d2",
+        "f442bbf5fb176f08817c03dbc1"
+      ]
+    },
+    {
+      "first_correct_rank": 2,
+      "ground_truth_chunk_ids": [
+        "3052503c3090ae580586d3fecb",
+        "fac1f082a887af5a353491c2da"
+      ],
+      "question": "How can I pivot a long-form DataFrame into wide-form with multiple value columns?",
+      "question_id": "q21",
+      "retrieved_chunk_ids": [
+        "2199171988b2e71e3f65be1db9",
+        "3052503c3090ae580586d3fecb",
+        "651802320e50e0259ac3191b18",
+        "e6f5576177def8916210ceefb2",
+        "e51cf6ba16332b6ebe1788d558"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "0b92477cf4351d53359e1d22af",
+        "a5b5cd51724c56e408fba582db"
+      ],
+      "question": "What is the recommended way to iterate over rows of a DataFrame, and why is iterrows discouraged?",
+      "question_id": "q22",
+      "retrieved_chunk_ids": [
+        "a5b5cd51724c56e408fba582db",
+        "0b92477cf4351d53359e1d22af",
+        "9074dcfec8dfaaa95aa2c26cd9",
+        "b7be76b7f0dde7ccb94eb8bb0c",
+        "b9da010f26d6a03ad2f4aea2f6"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "575cd06cae2fb0886eb64cf819",
+        "ba85d27e87218b47ed0d0f4044"
+      ],
+      "question": "How do I sort a DataFrame by multiple columns with different sort orders per column?",
+      "question_id": "q23",
+      "retrieved_chunk_ids": [
+        "ba85d27e87218b47ed0d0f4044",
+        "a25da1ad1a6a1c02b354f5f191",
+        "575cd06cae2fb0886eb64cf819",
+        "497c75cfd3b85e0a37d64c5e60",
+        "9b452d1febf0743c44ebd8a3c2"
+      ]
+    },
+    {
+      "first_correct_rank": 3,
+      "ground_truth_chunk_ids": [
+        "227824c93a05e269f793cdbbc5",
+        "38979febb08d2b5ad6a7a03f6e",
+        "bfa3a9e471f19143a18cedd840"
+      ],
+      "question": "How do I read a multi-sheet Excel file and merge the sheets on a common key?",
+      "question_id": "q24",
+      "retrieved_chunk_ids": [
+        "07e911b099839ba858d0dd5d9c",
+        "d4f394ca63e7981d0bcd942047",
+        "bfa3a9e471f19143a18cedd840",
+        "375b3208a00401467cbca61a66",
+        "c56e8e9ee4b3f089cf94e6f00f"
+      ]
+    },
+    {
+      "first_correct_rank": 1,
+      "ground_truth_chunk_ids": [
+        "3306da1178c504f01165edc741"
+      ],
+      "question": "How can I detect and drop duplicate rows in a DataFrame, and what does keep='last' do?",
+      "question_id": "q25",
+      "retrieved_chunk_ids": [
+        "3306da1178c504f01165edc741",
+        "3fe52b6bfcb385a260ae96f7a3",
+        "b535a5f00391a44c845200fd4a",
+        "daa2655549ee48cf163ce7b1c8",
+        "052ec0c017b3af4787557016da"
+      ]
+    }
+  ],
+  "retrieval": {
+    "hit_at_5": 0.7066666666666667,
+    "mrr_at_10": 0.5893333333333333,
+    "ndcg": 0.5620204863242725
+  },
+  "run_ts": "20260522T084252Z"
+}
