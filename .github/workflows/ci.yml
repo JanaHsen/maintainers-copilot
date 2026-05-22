@@ -219,6 +219,21 @@ jobs:
             --mode=fixture \
             --out=evals/reports/${{ github.run_id }}/summarize.json
 
+      - name: Chatbot eval gate (Rule 5 / Rule 10 — US4)
+        # Fixture-mode replay of evals/chatbot/eval_chatbot.py against
+        # the prebaked outputs in evals/chatbot/fixture_outputs.jsonl.
+        # Exits non-zero if any of the four metrics
+        # (tool_selection_accuracy, memory_write_rate,
+        # memory_recall_at_3, widget_refusal_rate) falls below its
+        # floor in eval_thresholds.yaml's chatbot: section. The
+        # operator regenerates the fixture from a real run with
+        # --mode=real --emit-fixture=evals/chatbot/fixture_outputs.jsonl.
+        run: |
+          uv run python -m evals.chatbot.eval_chatbot \
+            --mode=fixture \
+            --check-thresholds \
+            --out=evals/reports/${{ github.run_id }}/chatbot.json
+
       - name: Stack down
         if: always()
         run: docker compose down -v
