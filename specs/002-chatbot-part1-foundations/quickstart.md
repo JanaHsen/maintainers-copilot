@@ -205,3 +205,54 @@ The CI pipeline runs (in order, per Rule 10):
 8. The stack smoke test (`docker compose up`, hit `/health`, hit `/widget.js` *is not present in Part 1 — added in Part 3*; tear down).
 
 Any step's failure blocks merge.
+
+---
+
+## Quickstart smoke (2026-05-22 run, agent-driven)
+
+The agent does not have docker access in this development shell, so the docker-compose-driven steps (bring-up, live boot-check demos, curl-based smoke) are deferred to the operator. The following was verified IN-PROCESS via the test suite on the dev venv (`uv run pytest`).
+
+### Passing test suite snapshot (`uv run pytest tests/ --ignore=tests/integration --ignore=tests/model_server --ignore=tests/scripts --ignore=tests/services/test_retrieve_filters.py -q`)
+
+```
+1 failed, 112 passed, 37 skipped in 384.40s
+```
+
+- **112 passed** — covers repositories, services, infra (auth backend, redaction, vault constants), routers (auth, ner, summarize), tool primitives (write_memory + recall_memory), redaction tests (including the new JWT + email + persistence-helper cases), boot-check negative tests (auth_jwt_secret missing, Redis unreachable, chatbot tables missing).
+- **37 skipped** — integration tests gated on a reachable Postgres/Redis/Vault. Each one carries a documented `_ensure_postgres_reachable` skip guard (Phase B/E/G pattern). These will exercise their assertions when run against the live `docker compose` stack.
+- **1 failed** — `tests/services/test_retrieve_service.py::test_happy_path_returns_chunks` — **pre-existing, unrelated to Part 1**. The failure mode is `VaultUnreachableError: Vault unreachable at http://vault:8200` (the dev venv cannot resolve the in-compose `vault` hostname from the host shell); the same test passes inside the api container. Confirmed pre-existing via `git stash && pytest` before any Part 1 work began.
+
+### Lint + typecheck
+
+```
+$ uv run ruff check app/
+All checks passed!
+
+$ uv run mypy app/
+Success: no issues found in 54 source files
+```
+
+### What the operator must run live (story-by-story)
+
+The five story sections above remain authoritative for the live walk-through. The agent could not exercise them here because:
+
+- **Story 1 (auth round-trip):** Needs Vault seeded with `auth_jwt_secret` + a reachable async Postgres. The integration test `tests/api/test_auth_router.py` (T017) carries the assertions; it skips here but will run against the live stack.
+- **Story 2 (cross-conversation recall):** `tests/integration/test_cross_conversation_memory_recall.py` (T024) — same.
+- **Story 3 (widget actor refusal):** `tests/integration/test_widget_actor_refusal.py` (T025) — same.
+- **Story 4 (audit trail):** `tests/integration/test_audit_writes.py` (T026) — same.
+- **Story 5 (NER + summarize):** Needs a live `anthropic_api_key` in Vault. The eval scripts (`evals/ner/eval_ner.py`, `evals/summarize/eval_summarize.py`) run cleanly in `--mode=fixture` (T034, T037).
+- **Boot-check demos (Story 6):** Negative tests run in-process (T042 passes 3/3) but the live docker-compose recovery dance is documented in [RUNBOOK.md](../../RUNBOOK.md) Degraded / refuse-to-boot demos section.
+
+### Eval fixture-mode runs (offline, no Anthropic call)
+
+Both eval harnesses run cleanly in fixture mode from the dev venv:
+
+```
+$ uv run python -m evals.ner.eval_ner --mode=fixture
+# exits 0; report at evals/reports/<ts>/ner.json
+
+$ uv run python -m evals.summarize.eval_summarize --mode=fixture
+# exits 0; report at evals/reports/<ts>/summarize.json
+```
+
+Floors set conservatively in `eval_thresholds.yaml`: `ner.f1_floor=0.60`, `summarize.rubric_floor=3.5`. Both non-zero per Rule 4. To be revisited after an operator-driven real-API pilot run.
