@@ -1,0 +1,23 @@
+{
+  "number": 9005,
+  "title": "MultiIndex slicing with `xs` drops the level — is this documented?",
+  "body": "`df.xs('A', level='outer')` returns a DataFrame with the outer level dropped from the index. I expected the level to be retained as a single-value level. Is the drop documented somewhere? `df.loc['A']` does the same thing.",
+  "closedAt": "2025-01-19T11:55:00Z",
+  "comments": [
+    {
+      "body": "Pass `drop_level=False` to `xs` to keep the level. The default is to drop, which is mentioned briefly in the user guide but not in the API docstring. PR welcome to copy the user-guide note into the `xs` docstring.",
+      "createdAt": "2025-01-19T13:20:00Z",
+      "authorAssociation": "MEMBER"
+    },
+    {
+      "body": "Filed #9999 with a doc patch.",
+      "createdAt": "2025-01-19T15:00:00Z",
+      "authorAssociation": "CONTRIBUTOR"
+    },
+    {
+      "body": "Thanks!",
+      "createdAt": "2025-01-19T15:01:00Z",
+      "authorAssociation": "NONE"
+    }
+  ]
+}

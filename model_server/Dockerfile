@@ -28,6 +28,16 @@ RUN /app/.venv/bin/python -c "from transformers import AutoTokenizer, DistilBert
     AutoTokenizer.from_pretrained('distilbert-base-uncased'); \
     DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased')"
 
+# RAG models: the embedding model (BAAI/bge-base-en-v1.5, 768d) for /embed,
+# and the cross-encoder (BAAI/bge-reranker-base — same family as the
+# embedding model, picked over ms-marco-MiniLM-L-6-v2 after T033's first
+# attempt showed a domain mismatch; see DECISIONS.md). Pre-baked so the
+# model_server's boot check loads from cache and the refuse-to-boot path
+# is the only thing that depends on the cache being intact.
+RUN /app/.venv/bin/python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+    SentenceTransformer('BAAI/bge-base-en-v1.5'); \
+    CrossEncoder('BAAI/bge-reranker-base')"
+
 # Application code — both the shared app/ tree (for app.infra.vault_client
 # etc.) and the model_server/ package itself.
 COPY app/ ./app/

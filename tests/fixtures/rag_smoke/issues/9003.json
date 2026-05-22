@@ -1,0 +1,13 @@
+{
+  "number": 9003,
+  "title": "Question: which is faster for selecting many rows by label — loc or reindex?",
+  "body": "I have a DataFrame with ~10M rows indexed by a unique ID column and a list of ~50k IDs I want to fetch. Is `df.loc[id_list]` faster than `df.reindex(id_list)`? Are they equivalent? The docs don't compare them.",
+  "closedAt": "2024-10-22T14:45:00Z",
+  "comments": [
+    {
+      "body": "`loc` is for selection — it raises on missing labels (or silently in older versions). `reindex` is for alignment — it returns NaN for missing labels. If your `id_list` is known to be a subset of the index, they're equivalent in speed for a single call. If it isn't, `reindex` is what you want.",
+      "createdAt": "2024-10-22T16:30:00Z",
+      "authorAssociation": "COLLABORATOR"
+    }
+  ]
+}

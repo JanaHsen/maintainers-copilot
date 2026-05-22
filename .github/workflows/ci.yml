@@ -84,7 +84,23 @@ jobs:
           DATASET_RUN_ID: 20260519T133455Z
         run: bash scripts/ci/seed_classifier_artifact.sh
 
+      - name: Seed RAG corpus for /retrieve + eval gate
+        # The api's boot check refuses to boot without rows in rag_chunks
+        # for the configured RAG_CORPUS_RUN_ID (Rule 4 — see app/main.py and
+        # data-model.md "Lifecycle / boot-time invariants"). CI's Postgres
+        # is empty on every run, so we pull the canonical corpus from a
+        # public GitHub Release and bulk-load it before bringing api up.
+        # See scripts/ci/seed_rag_corpus.sh and the release pinned by
+        # RAG_CORPUS_RELEASE_TAG below.
+        env:
+          RAG_CORPUS_RELEASE_TAG: rag-corpus-v1-20260521T2327Z
+          RAG_CORPUS_RUN_ID: v1-full-20260521T2327Z
+          POSTGRES_HOST: localhost
+        run: bash scripts/ci/seed_rag_corpus.sh
+
       - name: Stack up — api + model-server + /health smoke
+        env:
+          RAG_CORPUS_RUN_ID: v1-full-20260521T2327Z
         run: |
           docker compose up -d
           ok=""
@@ -107,12 +123,13 @@ jobs:
           [ "$code" = "200" ] || { docker compose logs api; docker compose down -v; exit 1; }
 
       - name: Wait for model-server healthy
-        # The eval gate calls /classify, so model-server must be up. Boot
-        # involves loading state_dict.pt and warming the tokenizer cache, so
-        # give it a bigger window than the api before declaring failure.
+        # The eval gate calls /classify, /embed, and /rerank, so model-server
+        # must be up. Boot involves loading state_dict.pt, the BGE embedder
+        # (~440MB), and the BGE cross-encoder (~1.1GB) — wider window than
+        # the api before declaring failure.
         run: |
           ok=""
-          for i in $(seq 1 90); do
+          for i in $(seq 1 120); do
             h=$(docker compose ps model-server --format '{{.Health}}' 2>/dev/null || true)
             if [ "$h" = "healthy" ]; then ok="yes"; break; fi
             s=$(docker compose ps -a model-server --format '{{.State}}' 2>/dev/null || true)
@@ -139,6 +156,44 @@ jobs:
         run: |
           uv run python evals/classification/eval_classification.py \
             --model-server-url http://localhost:8001
+
+      - name: RAG corpus-build smoke (US2)
+        # End-to-end run of the corpus pipeline against the 5-doc / 5-issue
+        # smoke fixture. Verifies sparse-checkout-less fixture mode + the
+        # maintainer-association filter (9004 dropped) + chunker +
+        # sentence-transformers embed + bulk INSERT into rag_chunks +
+        # corpus_report.json upload. Target: under 30s after the model
+        # is in cache.
+        env:
+          VAULT_ADDR: http://localhost:8200
+          MINIO_HOST: localhost
+          POSTGRES_HOST: localhost
+        run: |
+          uv run python scripts/rag/build_corpus.py \
+            --dataset-run-id 20260519T133455Z \
+            --strategy parent_document \
+            --fixture tests/fixtures/rag_smoke \
+            --corpus-run-id ci-smoke-${{ github.run_id }}
+
+      - name: RAG eval gate (Rule 5 / Rule 10 — US3)
+        # Live retrieval over evals/rag/golden.jsonl via the api's /retrieve
+        # endpoint, scored against the parent-id ground truth. Writes the
+        # full report (retrieval metrics + generation metrics + per-question
+        # predictions) to MinIO at evals/reports/{ts}/rag.json and exits
+        # non-zero if any floor in eval_thresholds.yaml's rag: section is
+        # breached. --with-generation is omitted in CI so the gate runs
+        # without an Anthropic key requirement; the operator runs the
+        # full --with-generation variant locally for nightly numbers.
+        env:
+          VAULT_ADDR: http://localhost:8200
+          MINIO_HOST: localhost
+          POSTGRES_HOST: localhost
+          RAG_CORPUS_RUN_ID: v1-full-20260521T2327Z
+        run: |
+          uv run python -m evals.rag.eval_rag \
+            --mode advanced \
+            --upload-report \
+            --check-thresholds
 
       - name: Stack down
         if: always()

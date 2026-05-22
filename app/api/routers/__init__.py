@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.api.routers import health
+from app.api.routers import health, retrieve
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(retrieve.router)

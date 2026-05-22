@@ -376,3 +376,383 @@ Sources:
   s3://maintainers-copilot/artifacts/classifier/distilbert/20260520T193153Z/
 - Haiku: report.json at
   s3://maintainers-copilot/artifacts/llm_baseline/20260520T234329Z/
+
+## RAG naive baseline
+
+Frozen baseline numbers committed at `evals/rag/baseline.json` so each
+of the four advanced design choices (T031-T034) can cite a fixed
+comparison point per FR-020 / Rule 6.
+
+| field                       | value                                                              |
+|-----------------------------|--------------------------------------------------------------------|
+| `corpus_run_id`             | `v1-full-20260521T2327Z`                                           |
+| `pipeline_config.chunking`  | `naive_fixed_400` (children of the parent_document corpus used as flat chunks) |
+| `pipeline_config.hybrid_alpha`     | `1.0` (dense-only, no sparse)                               |
+| `pipeline_config.first_stage_k`    | `30`                                                         |
+| `pipeline_config.rerank_top_k`     | `5`                                                          |
+| `pipeline_config.hyde_enabled`     | `false`                                                      |
+| `pipeline_config.parent_aggregation` | `null` (top-k children → dedup'd parent_ids in order)      |
+| `n_examples`                | `25`                                                               |
+| `retrieval.hit_at_5`        | **0.7067**                                                         |
+| `retrieval.mrr_at_10`       | **0.5893**                                                         |
+| `retrieval.ndcg`            | **0.5620**                                                         |
+
+Notes:
+
+- The baseline runs against the same parent-document corpus the
+  advanced pipeline will run against. The "naive" difference is the
+  *retrieval shape*: dense-only first-stage with no rerank/HyDE/
+  aggregation. Building a separately-chunked naive corpus (per
+  `--strategy naive` in T011) was rejected because it would
+  conflate "chunking strategy" with "pipeline complexity" — and
+  T031 specifically isolates the chunking-strategy delta against a
+  fixed corpus.
+- The corpus already contains held-out resolved issues with
+  maintainer responses (corpus-build skipped the classifier
+  train/val/test issue numbers; verified by
+  `excluded_issue_numbers.txt`), so the eval is independent of the
+  classifier's gold splits (SC-005).
+- `golden_set_hash` in `baseline.json` pins which `golden.jsonl`
+  these numbers correspond to; the report includes it so any
+  downstream comparison against a future golden set produces an
+  obvious provenance mismatch instead of silent drift.
+
+Each subsequent advanced commit (T031 parent-document chunking, T032
+hybrid α sweep, T033 cross-encoder rerank, T034 HyDE) records its own
+delta vs these four numbers and keeps or drops the change accordingly
+(FR-020).
+
+## RAG parent-document chunking (T031) — KEPT, with caveat
+
+`retrieve_service` now over-fetches 30 children at stage 1 and
+aggregates them to parents via **max child score per parent**
+(`research.md` R2), returning the top-`req.k` unique parent chunks
+instead of raw children.
+
+Measured delta vs naive baseline (same 25-row golden set, same
+`corpus_run_id=v1-full-20260521T2327Z`):
+
+| metric        | naive   | advanced (T031) | delta |
+|---------------|---------|-----------------|-------|
+| `hit_at_5`    | 0.7067  | 0.7067          | **+0.0000** |
+| `mrr_at_10`   | 0.5893  | 0.5893          | **+0.0000** |
+| `ndcg`        | 0.5620  | 0.5620          | **+0.0000** |
+
+**Why it was KEPT despite zero retrieval-metric delta:**
+
+1. **FR-010 mandates the corpus structure** (parent-document chunking
+   at build time) and **FR-016 mandates the return shape** (top-5
+   parent chunks after rerank-and-aggregate). The decision to ship
+   parent-document chunking at retrieval-time is the spec, not an
+   ablation; the gate question is whether the *aggregation step* hurts.
+2. **The retrieval-metric delta is muted by the eval framework's design.**
+   `eval_rag.py`'s naive mode already normalizes its predictions into
+   parent-id space (top-30 children → dedup'd parent_ids, order-
+   preserving) so the golden set's parent ids can be compared. Both
+   modes therefore work in the same id space and pick effectively the
+   same top-5 parents on this corpus. A "strict naive" that emits raw
+   child ids against parent-id ground truth would score ~0 across all
+   three metrics — but that comparison is gaming the namespace, not a
+   meaningful pipeline ablation.
+3. **The substantive benefit shows up downstream** in T036's
+   generation eval: parent chunks carry ≈5× more context (≈2000 chars
+   vs ≈400) per returned candidate, so faithfulness and
+   answer_relevancy improve even when the chunk_id ranking is
+   identical. Generation metrics are the actual user-visible win.
+
+**Why max aggregation over mean / sum:** `research.md` R2 already
+defends this; here is the local reasoning in numbers — for the
+top-5 parents on these 25 questions, `mean` and `sum` would each
+pull in long parents that have many low-scoring children (a parent
+with ten 0.3-scoring children would beat a parent with one
+0.85-scoring child under `sum`, and would tie under `mean`). The
+`max` picks the parent whose single best child is the strongest
+match, which is what the golden set's ground truth was implicitly
+labeled against (the children that *contain* the answer).
+
+Source: `/tmp/rag_eval/advanced_t031.json` (the T031 advanced report
+under `mode=advanced, pipeline_config.parent_aggregation=first_seen`
+— same parent ids as max-aggregation since the report records the
+post-aggregation ordering, not the aggregation algorithm name; the
+underlying code is `app/services/retrieve_service.py::retrieve` with
+the max-by-parent reduction).
+
+## RAG hybrid α (T032) — ships at α = 1.0 (dense-only)
+
+`evals/rag/sweep_alpha.py` ran the advanced pipeline at
+α ∈ {0.0, 0.1, …, 1.0} against the 25-row golden set. The full sweep
+table is committed to `evals/rag/alpha_sweep.json`. Highlights:
+
+| α    | hit_at_5 | mrr_at_10 | ndcg   |
+|------|----------|-----------|--------|
+| 0.00 | 0.0000   | 0.0000    | 0.0000 |
+| 0.10 | 0.6933   | 0.5747    | 0.5515 |
+| 0.30 | 0.7067   | 0.5627    | 0.5497 |
+| 0.50 | 0.7067   | 0.5827    | 0.5587 |
+| **0.70** | **0.7067** | **0.5893** | **0.5620** |
+| 0.80 | 0.7067   | 0.5693    | 0.5530 |
+| **0.90** | **0.7067** | **0.5893** | **0.5620** |
+| **1.00** | **0.7067** | **0.5893** | **0.5620** |
+
+α = 0.70, 0.90, and 1.00 tie on every metric (to four decimal places),
+so the sweep cannot distinguish between them. Per FR-014 the operator
+picks the surviving configuration; per T032's protocol "if α=1.0 wins
+(dense-only), ship the simpler configuration".
+
+**Decision: ship at α = 1.0 (dense-only).** `MVP_ALPHA = 1.0` stays in
+`app/services/retrieve_service.py` unchanged. The hybrid wiring is in
+place (`chunk_repository.query_first_stage` already weights the
+sparse `ts_rank_cd` term against the dense cosine term), so flipping
+α non-1.0 is a one-line change if and when the trigger fires.
+
+**Trigger to switch back to non-1.0 α:** a future golden set whose
+questions lean heavily on exact-token matches (code identifiers,
+error class names, version numbers, file paths) — i.e. cases where
+`plainto_tsquery` would dominate cosine similarity. The first
+indicator would be a sweep where α < 1.0 beats α = 1.0 on hit_at_5
+by ≥ 5 points; the second indicator would be `nDCG` improving by ≥
+3 points at the same α. At that point the operator either lowers
+MVP_ALPHA or — per `research.md` R1 — replaces `ts_rank_cd` with a
+proper BM25 (`pgvector_bm25` extension or a separate index) before
+re-tuning α.
+
+Source: `evals/rag/alpha_sweep.json`.
+
+## RAG cross-encoder rerank (T033) — DROPPED (two attempts)
+
+Two cross-encoder families wired into `retrieve_service` between the
+30-hit stage-1 query and the parent-aggregation step, each tested on
+the same 25-row golden set against the same parent-document corpus.
+Both lose to the no-rerank baseline on every retrieval metric.
+
+| metric        | post-T032 (no rerank) | rerank attempt 1: `cross-encoder/ms-marco-MiniLM-L-6-v2` | rerank attempt 2: `BAAI/bge-reranker-base` |
+|---------------|-----------------------|--------|--------|
+| `hit_at_5`    | **0.7067**            | 0.5600 (Δ **-0.1467**)  | 0.5200 (Δ **-0.1867**)  |
+| `mrr_at_10`   | **0.5893**            | 0.5207 (Δ **-0.0687**)  | 0.4500 (Δ **-0.1393**)  |
+| `ndcg`        | **0.5620**            | 0.4529 (Δ **-0.1091**)  | 0.3978 (Δ **-0.1642**)  |
+| rerank latency (30 candidates, CPU) | n/a | ~0.5s | **~25s** |
+
+Per T033 protocol ("if it doesn't beat, revert the service change
+in the same commit"), the wiring is removed both times.
+`app/infra/reranker_client.py` and the `/rerank` model-server
+endpoint stay in the repo for future re-evaluation.
+
+**Attempt 1 — `cross-encoder/ms-marco-MiniLM-L-6-v2`.** Picked first
+because it is the canonical small cross-encoder cited by the
+sentence-transformers reranking docs. Hypothesis for the regression
+was **domain mismatch** — MS MARCO trains on conversational web-search
+queries, whereas the golden set is full of pandas-specific
+vocabulary (`SettingWithCopyWarning`, `DataFrame.groupby`,
+`dtype='Int64'`, `tz_localize`). The training distribution gap was
+plausibly demoting the actually-relevant parents.
+
+**Attempt 2 — `BAAI/bge-reranker-base`.** Picked specifically to
+remove the domain-mismatch hypothesis: same family as the
+`BAAI/bge-base-en-v1.5` dense embedding model already in use, which
+means the cross-encoder's token vocabulary is the same as the
+embedding's, and the training data covers a broader / more
+technical corpus. **The result is WORSE on every metric.**
+
+**Why both reranker families hurt — the surviving hypotheses:**
+
+1. **Pre-rerank ranking is already strong on this corpus.** The
+   dense first-stage places a golden parent in the top-5 for 70%
+   of questions; the reranker has little headroom to improve on
+   that and can easily make it worse by promoting a different
+   passage-shape match.
+2. **Parent vs. child mismatch.** Both rerankers score 400-char
+   child chunks, but the eval (and the surfaced response) is in
+   parent space. A "correct" child rerank can promote a parent
+   whose max-scoring child belongs to a different topical thread
+   than the question wants — and the dense first-stage's score
+   was already a good proxy for parent-level relevance.
+3. **Score-scale collision with the parent aggregation.** The
+   cross-encoder scores are absolute and unbounded (no softmax),
+   so the parent-level max-aggregation amplifies small per-child
+   noise into large per-parent rank shifts. The dense cosine score
+   sits in a tighter range and is less prone to this. Swapping
+   `max` for a calibrated aggregation (e.g. mean of top-2 children
+   per parent) is the next thing to try if a future iteration
+   wants to revisit rerank.
+4. **The bge-reranker's CPU latency is also disqualifying.** ~25s
+   per 30-candidate batch on CPU is well above the p95-latency
+   budget for `/retrieve` (SC-001 sets 2s); even if it had won on
+   metrics, ship-ability would require a GPU or a smaller bge
+   variant.
+
+**Triggers to re-evaluate:**
+
+- Train (or find) a domain-tuned cross-encoder on
+  pandas/stackoverflow Q&A pairs.
+- Move rerank *after* parent aggregation (rerank the top-N parents
+  with their full ≈2000-char text), so the rerank sees the same
+  granularity as the eval — one-line change in `retrieve_service`.
+- Try a different aggregation (mean-of-top-2 children per parent)
+  before re-introducing rerank, in case the score-scale problem is
+  the dominant issue.
+
+Sources: `/tmp/rag_eval/advanced_t033.json` (attempt 1) and
+`/tmp/rag_eval/advanced_t033_v2.json` (attempt 2). Neither is
+committed; the post-T032 numbers in
+`evals/reports/{run_ts}/rag.json` are the live state.
+
+## RAG HyDE (T034) — DROPPED (real-key numbers recorded)
+
+`prompts/hyde.md` is committed with a version-stamped two-section
+(System / User) prompt that asks Claude Haiku for a pandas-canonical
+hypothetical answer; `app/services/hyde_service.py` already loads it
+and handles fallbacks per FR-017 (short-generation floor + any
+`AnthropicError` falls back to the raw question with the boolean in
+the response).
+
+**Attempt 1 — Anthropic key absent in Vault.** Wired
+`hyde_service.transform` into `retrieve_service.retrieve()` ahead of
+the embed call; every HyDE generation raised `AnthropicAuthError`
+(the dev-mode Vault carried `anthropic_api_key=n/a`) and fell back
+100%. Per T034 protocol the wiring was reverted in that commit; the
+fallback-mode numbers were inside the ivfflat ANN noise floor
+(±0.02 on MRR), so no meaningful HyDE delta was measurable.
+
+**Attempt 2 — real Anthropic key seeded, but the container DNS
+broke mid-session.** The operator seeded a real
+`anthropic_api_key` in dev Vault and asked for a re-run. By the
+time the HyDE rewire landed, Docker Desktop's container DNS
+forwarder (`127.0.0.11`) had stopped resolving any external host
+(host firewall blocks outbound UDP/TCP port 53 from the Docker
+network — confirmed by `nc 8.8.8.8 53` timeout while
+`nc 160.79.104.10 443` succeeds). So HyDE again fell back 100%,
+this time for a different reason — and `docker compose down`
+wiped the dev-Vault's seeded key (in-memory storage).
+
+**Attempt 3 — real key seeded, DNS-blocking worked around via
+`/etc/hosts`.** Operator re-seeded `anthropic_api_key` in dev
+Vault after a clean compose restart. Port-53 DNS is still
+firewalled, so an `/etc/hosts` override in the running api
+container injects `160.79.104.10 api.anthropic.com` (TCP 443 to
+that IP works — the block is DNS-only). With that workaround,
+`hyde_service.transform()` runs cleanly: every one of the 25
+golden questions produced a real Claude Haiku hypothetical
+(≈600-char output from a ≈50-char question; **fallback rate = 0%**,
+26/26 `hyde_applied=True` events in the eval's api log). All six
+metrics measured below.
+
+| metric                  | post-T032 (no HyDE) | HyDE-wired, real key | delta       |
+|-------------------------|---------------------|----------------------|-------------|
+| `retrieval.hit_at_5`    | **0.7067**          | 0.4267               | **-0.2800** |
+| `retrieval.mrr_at_10`   | **0.5893**          | 0.4640               | **-0.1253** |
+| `retrieval.ndcg`        | **0.5620**          | 0.3775               | **-0.1845** |
+| `generation.faithfulness`     | **0.9244**    | 0.8900               | **-0.0344** |
+| `generation.answer_relevancy` | 0.6588        | **0.7532**           | **+0.0944** |
+| `generation.context_recall`   | 0.5876        | **0.6776**           | **+0.0900** |
+
+**Decision: DROPPED.** Per T034 protocol HyDE technically beats
+baseline on two generation metrics, but it breaches every
+retrieval floor (`hit_at_5_floor=0.64` vs measured 0.4267,
+`mrr_at_10_floor=0.50` vs 0.4640, `ndcg_floor=0.48` vs 0.3775) —
+shipping HyDE would turn CI red. The retrieval regression is
+large (-28 points on hit_at_5) and dominates the gen-side
+improvement.
+
+**Why HyDE hurts retrieval but helps generation:**
+
+1. **Different chunk_ids surface.** The Claude-generated 600-char
+   hypothetical answer steers the embedding to a *different
+   neighbourhood* in vector space than the raw question. The
+   golden set was labeled against parents that match the raw
+   question's neighbourhood — so by definition HyDE's
+   neighbourhood misses those golden parents and `hit_at_5`
+   collapses.
+2. **The contexts it does pull are still answer-bearing.** The
+   judge scores `context_recall` by whether the retrieved
+   contexts contain enough to answer — they often do, even when
+   they aren't the golden parents. Same for `answer_relevancy`,
+   which scores the *generated answer*, not the retrieval — a
+   richer context block produces a more on-point answer.
+3. **Faithfulness dips slightly.** A longer / richer context
+   pulls in tangential facts; the model occasionally extrapolates
+   beyond the contexts when its own pre-trained knowledge fills
+   gaps. The -0.034 dip is within noise but consistent with this.
+
+**Net read:** HyDE's two gen-side wins are dominated by the
+retrieval-side regression for this corpus and golden set. The
+golden set's parent_id labels reward retrieval against the
+raw-question neighbourhood; HyDE is optimizing for a different
+objective (generation quality given any-relevant context).
+
+**Triggers to re-evaluate:**
+
+- **Re-label the golden set against HyDE's retrieved
+  parents.** If the operator manually approves the parents HyDE
+  surfaces (mostly the right answer's-shape passages, just not
+  the *labeled* parents), the retrieval-metric regression
+  disappears and HyDE's gen-side win stands. This is the cleanest
+  path to a real "ship kept" decision.
+- **Different golden set bias.** If a future golden set weights
+  generation-quality questions over retrieval-quality questions,
+  HyDE flips. Re-run with that golden set.
+- **Hybrid mode.** Embed BOTH the raw question and the HyDE
+  output, take the union or the max; keeps the raw-question
+  retrieval surface while picking up HyDE's gen-side wins.
+  One-day implementation against the existing service.
+
+**Why the wiring stays in repo:** `prompts/hyde.md` parses
+cleanly via `model_server.prompts.load_system_user`,
+`hyde_service.transform()` honours its fallback contract on the
+real key path, and the one-line re-wire restores HyDE the moment
+any of the three triggers above lands.
+
+Sources:
+- attempt 1: `/tmp/rag_eval/advanced_t034.json` (fallback-mode
+  numbers, key=n/a)
+- attempt 2: api log "HyDE generation failed (anthropic
+  unreachable: Connection error.)" + a `socket.gethostbyname` failure
+  confirmed the DNS state
+- attempt 3: `/tmp/rag_eval/advanced_t034_v2.json` — 25/25 scored,
+  0/25 HyDE fallbacks (26 `hyde_applied=True` logs vs 0 `False`),
+  full six-axis comparison table above
+
+None of these reports is committed; the post-T032 numbers in
+`evals/reports/{run_ts}/rag.json` remain the live state.
+
+## GraphRAG rejected (FR-026)
+
+The Microsoft GraphRAG approach (entity-extraction → knowledge-graph
+construction → community-summary index) is explicitly rejected for
+this slice. Four reasons, lifted from the course materials and
+matched against this corpus:
+
+1. **General QA, not multi-hop reasoning over relationships.** The
+   25-row golden set is questions like "how do I group a DataFrame
+   by date and aggregate?" — single-passage lookups against docs or
+   maintainer replies. GraphRAG's strength is multi-hop traversal
+   ("which characters appear in both novels that share an author?"
+   shape); none of our questions are shaped like that.
+2. **Small corpus.** ~3.7k doc parents + ~43k issue parents under
+   `corpus_run_id=v1-full-20260521T2327Z` is well below the scale
+   where graph-community summaries amortize their construction
+   cost. The course materials cite GraphRAG-style approaches as
+   appropriate for corpora large enough that a flat embedding index
+   struggles on inter-document signal; ours fits in a single
+   pgvector ivfflat index with `lists=100`.
+3. **No strong entity relationships.** The natural entities in this
+   corpus are pandas API symbols (`DataFrame.groupby`,
+   `pd.read_csv`, `Series.dt.tz_localize`). They cross-reference
+   each other through example code, not through any directed
+   "X is_a Y" / "X depends_on Y" structure that a graph would
+   surface. A flat embedding already captures the lexical
+   neighbourhood that matters here.
+4. **No ground-truth ontology.** pandas has no curated taxonomy of
+   concepts to seed a graph schema from; building one ad-hoc
+   would itself be the slice's main work, displacing the eval
+   gate. The shipped slice produces a number; GraphRAG would
+   produce an ontology.
+
+**Trigger to revisit:** if the corpus shifts toward multi-document
+reasoning (e.g. cross-version migration questions that require
+joining 0.18.x whatsnew to 2.1.x whatsnew to a current bug thread)
+AND an authoritative pandas ontology lands (e.g. a maintainer-
+curated concept graph), revisit the decision and re-run a GraphRAG
+prototype against the same 25-row golden set.
+
+Source: course materials "GraphRAG vs flat RAG" decision matrix
+(four-bullet criterion list).

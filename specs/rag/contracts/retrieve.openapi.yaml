@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: Maintainer's Copilot — /retrieve
+  version: "0.1.0"
+  description: |
+    Advanced RAG retrieval endpoint. Takes a maintainer question + optional
+    filters; returns the top reranked parent chunks from the pandas docs +
+    held-out issue corpus.
+servers:
+  - url: http://localhost:8000
+paths:
+  /retrieve:
+    post:
+      operationId: retrieve
+      summary: Retrieve the top relevant chunks for a maintainer question.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetrieveRequest"
+      responses:
+        "200":
+          description: Reranked chunks for the question.
+          headers:
+            X-Request-Id:
+              schema: { type: string }
+            X-Trace-Id:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrieveResponse"
+        "422":
+          description: Request body failed validation (empty question, bad filter, etc.).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "502":
+          description: Model server returned a malformed or 4xx response (Rule 11).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Model server unreachable or cross-encoder not loaded (Rule 11).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "504":
+          description: Model server timed out after retries (Rule 11).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+components:
+  schemas:
+
+    RetrieveRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          description: Maintainer's natural-language question.
+          example: "how do I group a DataFrame by date and aggregate?"
+        k:
+          type: integer
+          minimum: 0
+          maximum: 20
+          default: 5
+          description: |
+            Max number of reranked parent chunks to return. `k=0` returns
+            an empty list with HTTP 200.
+        filters:
+          $ref: "#/components/schemas/RetrieveFilters"
+
+    RetrieveFilters:
+      type: object
+      properties:
+        source:
+          type: array
+          items:
+            type: string
+            enum: [docs, issues]
+          description: |
+            Source-type subset to search. Omit or pass [] to search both.
+        from:
+          type: string
+          format: date-time
+          description: Inclusive lower bound on `source_timestamp`.
+        to:
+          type: string
+          format: date-time
+          description: Inclusive upper bound on `source_timestamp`.
+
+    RetrieveResponse:
+      type: object
+      required: [chunks, request_id, trace_id]
+      properties:
+        chunks:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RetrievedChunk"
+        request_id:
+          type: string
+        trace_id:
+          type: string
+
+    RetrievedChunk:
+      type: object
+      required: [content, source_type, source_id, score, metadata, chunk_id]
+      properties:
+        content:
+          type: string
+          description: |
+            The PARENT chunk text (≈2000 chars). The reranker scored child
+            chunks; this is the parent that aggregated the best child score
+            (max aggregation; see R2 in research.md).
+        source_type:
+          type: string
+          enum: [docs, issues]
+        source_id:
+          type: string
+          description: |
+            For docs: relative file path inside the pandas repo
+            (e.g. `docs/user_guide/10min.rst`). For issues: the
+            issue_number as a string.
+        score:
+          type: number
+          format: float
+          description: |
+            Cross-encoder relevance score (parent's max child score under
+            the aggregation in R2). Higher is better.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Caller-relevant fields. At minimum carries `source_timestamp`,
+            `section_path`, and `corpus_run_id`.
+        chunk_id:
+          type: string
+          description: Opaque parent_id. Useful for tracing + golden-set joins.
+
+    ErrorEnvelope:
+      type: object
+      required: [detail, kind, request_id, trace_id]
+      properties:
+        detail:
+          type: string
+        kind:
+          type: string
+          enum: [validation, unreachable, timeout, internal, bad_request, unexpected]
+        request_id:
+          type: string
+        trace_id:
+          type: string

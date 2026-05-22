@@ -1,0 +1,18 @@
+{
+  "number": 9001,
+  "title": "groupby on Categorical column returns extra empty groups in 2.2",
+  "body": "Reproducer: `df.groupby('cat_col', observed=False)` returns one row per category level even when no row of `df` has that level. In 2.1 the default was `observed=True`. Either restore the default or document the change in the release notes — silent change.\n\nMRE attached as a gist.",
+  "closedAt": "2024-08-12T15:30:00Z",
+  "comments": [
+    {
+      "body": "Thanks for the report. The default flip was intentional (#54321) but the docs gap is a real bug. PR to update the changelog incoming.",
+      "createdAt": "2024-08-12T16:01:00Z",
+      "authorAssociation": "MEMBER"
+    },
+    {
+      "body": "+1, hit this in production too.",
+      "createdAt": "2024-08-13T09:14:00Z",
+      "authorAssociation": "NONE"
+    }
+  ]
+}
