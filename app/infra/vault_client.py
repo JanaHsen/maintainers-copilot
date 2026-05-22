@@ -26,6 +26,11 @@ KEY_ANTHROPIC_API_KEY = "anthropic_api_key"  # key name, not a secret value
 # fastapi-users JWT signing key (research R2). Lives under the existing
 # kv-v2 secret, not a separate Vault path, to match the existing layout.
 KEY_AUTH_JWT_SECRET = "auth_jwt_secret"  # key name, not a secret value
+# First-admin bootstrap credentials, read by app/bootstrap/admin_bootstrap.py
+# at first stack-up. Kept under the existing kv-v2 secret for the same reason
+# as KEY_AUTH_JWT_SECRET (single-secret layout, single _read_all() round-trip).
+KEY_BOOTSTRAP_ADMIN_EMAIL = "bootstrap_admin_email"  # key name, not a secret value
+KEY_BOOTSTRAP_ADMIN_PASSWORD = "bootstrap_admin_password"  # key name, not a secret value
 
 
 class VaultBootstrapError(RuntimeError):
