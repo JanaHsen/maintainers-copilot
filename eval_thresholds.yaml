@@ -36,18 +36,21 @@ rag:
   answer_relevancy_floor: 0.59
   context_recall_floor: 0.52
 
-# NER eval floor. Pilot-buffer value (research R7 / R8); revisit
-# once a real-API run against evals/ner/golden.jsonl establishes
-# the observed micro-F1. The 0.60 floor is intentionally conservative
-# so CI never false-alarms on first contact; it is non-zero per Rule 4
-# (eval gates without enforceable floors are not gates).
+# NER eval floor. Set from the 2026-05-22 real-API pilot run against
+# evals/ner/golden.jsonl: observed aggregate micro-F1 = 0.9508
+# (repo_names 1.0, file_paths 0.947, error_types 1.0, package_names 0.875).
+# Floor set ~5 points below observed per the standard buffer.
+# Fixture (evals/ner/fixture_outputs.jsonl) was regenerated from the same
+# real run so CI's --mode=fixture path reproduces the same aggregate.
 ner:
-  f1_floor: 0.60
+  f1_floor: 0.9
 
-# Summarize rubric floor. Pilot-buffer value (R8). The metric is the
-# mean across the three rubric dimensions (faithfulness, conciseness,
-# intent) on a 1-5 scale. 3.5 represents "above the mid-point on
-# every dimension on average" and is conservative enough for first
-# contact; revisit after a real-API pilot run.
+# Summarize rubric floor. Set from the 2026-05-22 real-API pilot run
+# against evals/summarize/golden.jsonl: observed aggregate (mean across
+# faithfulness/conciseness/intent on 1-5) = 4.833 first run, 4.767 second
+# run (judge variance). Floor at 4.3 absorbs ~10 dimension-flips of judge
+# variance while still catching a real regression. Fixture
+# (evals/summarize/fixture_outputs.jsonl) was regenerated from the
+# second real run.
 summarize:
-  rubric_floor: 3.5
+  rubric_floor: 4.3

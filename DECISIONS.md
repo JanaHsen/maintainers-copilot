@@ -840,3 +840,58 @@ replaced. The four placeholders are `[REDACTED]`, `[REDACTED_JWT]`,
 opaque-token catchall.
 
 **Source.** Research.md R6, T004 commit, T020 + T018 implementation.
+
+## Part 1 eval floors set from real pilot
+
+**Date**: 2026-05-22.
+
+**Replaces**: the conservative placeholder floors set in T038
+(`ner.f1_floor=0.60`, `summarize.rubric_floor=3.5`) — flagged in the Part 1
+status comment as "to be revisited after a real-API pilot run."
+
+**Observed scores** (real-API run via `python -m evals.ner.eval_ner
+--mode=real` and `python -m evals.summarize.eval_summarize --mode=real`
+against the live stack):
+
+- **NER** aggregate micro-F1: **0.9508** on 10 examples.
+  - `repo_names` F1 = 1.0
+  - `file_paths` F1 = 0.947
+  - `error_types` F1 = 1.0
+  - `package_names` F1 = 0.875
+- **Summarize** aggregate (mean across the three rubric dimensions on a
+  1-5 scale): **4.833** (run 1), **4.767** (run 2 — judge variance).
+  - `faithfulness` mean ≈ 4.6-4.9
+  - `conciseness` mean ≈ 4.6-4.9
+  - `intent` mean ≈ 4.8-5.0
+
+**Floors landed**:
+
+- `ner.f1_floor` = **0.9** (~5 points below observed).
+- `summarize.rubric_floor` = **4.3** (~5 points below the lower observed
+  run; absorbs ~10 dimension-flips of judge variance while still catching
+  a real regression).
+
+**Gap and noise budget**:
+
+- NER: 0.05 absolute gap. On 10 examples, one misclassification swings a
+  bucket F1 by ~10 points; the floor will catch a structural regression
+  but not the noise of one bad example. Adequate for a small golden set.
+- Summarize: 0.467 absolute gap. The judge is frozen Claude Haiku
+  (research R8); run-to-run variance was 0.066 across the two pilot runs.
+  ~14× the observed variance, so the floor will not false-alarm.
+
+**Fixtures regenerated**:
+
+- `evals/ner/fixture_outputs.jsonl` from the real run; fixture-mode now
+  reproduces aggregate F1 = 0.9508.
+- `evals/summarize/fixture_outputs.jsonl` from the second real run;
+  fixture-mode reproduces aggregate = 4.767.
+
+This matters because CI runs `--mode=fixture` against these files; a stale
+fixture (e.g. seeded from the perfect-prediction placeholder) would mean
+the CI gate isn't measuring anything meaningful. Both fixture files now
+embed the same outputs the real model produced.
+
+**Trigger to revisit**: if observed scores trend consistently above 0.95 /
+4.85 over several pushes, floors can move up. If the golden set grows
+beyond 10 examples (or the prompts change versions), re-pilot and rederive.
