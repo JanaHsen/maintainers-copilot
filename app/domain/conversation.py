@@ -59,6 +59,24 @@ class Message(BaseModel):
     created_at: datetime
 
 
+class MemoryWindowMessage(BaseModel):
+    """A single message in the Redis short-term window.
+
+    Distinct from :class:`Message` (the Postgres row): the in-Redis record has
+    no DB-assigned ``id`` and the ``created_at`` is recorded by the appender,
+    not by Postgres' ``default now()``. Same tool-consistency rule applies
+    (``tool_*`` are populated iff ``role == 'tool'``) but enforced at the
+    service layer, not the DB layer (FR-015..FR-018).
+    """
+
+    role: MessageRole
+    content: str
+    tool_name: str | None = None
+    tool_input: dict[str, Any] | None = None
+    tool_output: dict[str, Any] | None = None
+    created_at: datetime | None = None
+
+
 # --- actor identity -------------------------------------------------------
 
 
