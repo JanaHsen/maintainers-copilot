@@ -661,3 +661,46 @@ python -c "import socket; socket.gethostbyname('api.anthropic.com')"`
 returning `EAI_AGAIN` confirm the attempt-2 DNS state. Neither
 report is committed; the post-T032 numbers in
 `evals/reports/{run_ts}/rag.json` remain the live state.
+
+## GraphRAG rejected (FR-026)
+
+The Microsoft GraphRAG approach (entity-extraction → knowledge-graph
+construction → community-summary index) is explicitly rejected for
+this slice. Four reasons, lifted from the course materials and
+matched against this corpus:
+
+1. **General QA, not multi-hop reasoning over relationships.** The
+   25-row golden set is questions like "how do I group a DataFrame
+   by date and aggregate?" — single-passage lookups against docs or
+   maintainer replies. GraphRAG's strength is multi-hop traversal
+   ("which characters appear in both novels that share an author?"
+   shape); none of our questions are shaped like that.
+2. **Small corpus.** ~3.7k doc parents + ~43k issue parents under
+   `corpus_run_id=v1-full-20260521T2327Z` is well below the scale
+   where graph-community summaries amortize their construction
+   cost. The course materials cite GraphRAG-style approaches as
+   appropriate for corpora large enough that a flat embedding index
+   struggles on inter-document signal; ours fits in a single
+   pgvector ivfflat index with `lists=100`.
+3. **No strong entity relationships.** The natural entities in this
+   corpus are pandas API symbols (`DataFrame.groupby`,
+   `pd.read_csv`, `Series.dt.tz_localize`). They cross-reference
+   each other through example code, not through any directed
+   "X is_a Y" / "X depends_on Y" structure that a graph would
+   surface. A flat embedding already captures the lexical
+   neighbourhood that matters here.
+4. **No ground-truth ontology.** pandas has no curated taxonomy of
+   concepts to seed a graph schema from; building one ad-hoc
+   would itself be the slice's main work, displacing the eval
+   gate. The shipped slice produces a number; GraphRAG would
+   produce an ontology.
+
+**Trigger to revisit:** if the corpus shifts toward multi-document
+reasoning (e.g. cross-version migration questions that require
+joining 0.18.x whatsnew to 2.1.x whatsnew to a current bug thread)
+AND an authoritative pandas ontology lands (e.g. a maintainer-
+curated concept graph), revisit the decision and re-run a GraphRAG
+prototype against the same 25-row golden set.
+
+Source: course materials "GraphRAG vs flat RAG" decision matrix
+(four-bullet criterion list).
