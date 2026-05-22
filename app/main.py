@@ -86,6 +86,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # uvicorn aborts startup and the container exits non-zero (Rule 4).
     _verify_rag_corpus()
 
+    # Chatbot Part 1 boot checks (data-model.md "Boot-time invariants").
+    # Migration 0003 must be applied; absence of any chatbot table is fatal.
+    _verify_chatbot_tables()
+
     logger.info("startup complete: all required dependencies reachable")
     try:
         yield
@@ -104,6 +108,10 @@ class RagCorpusEmptyError(RuntimeError):
 
 class PgvectorMissingError(RuntimeError):
     """The pgvector extension or the rag_chunks table is missing — refuse-to-boot."""
+
+
+class ChatbotTableMissingError(RuntimeError):
+    """A required chatbot table is absent — refuse-to-boot."""
 
 
 def _verify_rag_corpus() -> None:
@@ -146,6 +154,36 @@ def _verify_rag_corpus() -> None:
             f"no rag_chunks rows for corpus_run_id={corpus_run_id!r}"
         )
     logger.info("RAG corpus check ok: corpus_run_id=%s", corpus_run_id)
+
+
+# Chatbot Part 1 tables required for the auth / memory / widget / audit paths
+# (data-model.md "Boot-time invariants"). The check distinguishes missing-table
+# (ProgrammingError -> the migration hasn't been applied) from unreachable
+# Postgres (OperationalError -> covered upstream by `database.connect_with_retry`).
+_REQUIRED_CHATBOT_TABLES = ("users", "chatbot_memories", "widgets")
+
+
+def _verify_chatbot_tables() -> None:
+    """Each missing table logs ONE specific REFUSE TO BOOT line and propagates."""
+    try:
+        with get_engine().connect() as conn:
+            for table_name in _REQUIRED_CHATBOT_TABLES:
+                try:
+                    conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+                except ProgrammingError as exc:
+                    logger.critical(
+                        "REFUSE TO BOOT: %s table missing: %s", table_name, exc
+                    )
+                    raise ChatbotTableMissingError(
+                        f"{table_name} table missing"
+                    ) from exc
+    except OperationalError as exc:  # Postgres unreachable; covered upstream too
+        logger.critical(
+            "REFUSE TO BOOT: Postgres unreachable during chatbot tables check: %s",
+            exc,
+        )
+        raise
+    logger.info("chatbot tables check ok: %s", ", ".join(_REQUIRED_CHATBOT_TABLES))
 
 
 app = FastAPI(title="Maintainer's Copilot", lifespan=lifespan)
