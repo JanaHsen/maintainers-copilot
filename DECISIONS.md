@@ -596,7 +596,7 @@ Sources: `/tmp/rag_eval/advanced_t033.json` (attempt 1) and
 committed; the post-T032 numbers in
 `evals/reports/{run_ts}/rag.json` are the live state.
 
-## RAG HyDE (T034) — DROPPED pending Anthropic key
+## RAG HyDE (T034) — DROPPED (test environment blocked the real-key retest)
 
 `prompts/hyde.md` is committed with a version-stamped two-section
 (System / User) prompt that asks Claude Haiku for a pandas-canonical
@@ -605,45 +605,59 @@ and handles fallbacks per FR-017 (short-generation floor + any
 `AnthropicError` falls back to the raw question with the boolean in
 the response).
 
-The wiring was added to `retrieve_service.retrieve()` between the
-incoming question and the embedding call, then reverted in the same
-commit per T034 protocol. **Reason for the revert:** the Anthropic
-API key is set to `n/a` in this environment's Vault (see
-`docker compose exec vault vault kv get secret/maintainers-copilot`),
-so every HyDE generation raised `AnthropicAuthError` and fell back
-100% — the test was structurally unable to evaluate HyDE.
+**Attempt 1 — Anthropic key absent in Vault.** Wired
+`hyde_service.transform` into `retrieve_service.retrieve()` ahead of
+the embed call; every HyDE generation raised `AnthropicAuthError`
+(the dev-mode Vault carried `anthropic_api_key=n/a`) and fell back
+100%. Per T034 protocol the wiring was reverted in that commit; the
+fallback-mode numbers were inside the ivfflat ANN noise floor
+(±0.02 on MRR), so no meaningful HyDE delta was measurable.
 
-| metric        | post-T032 (no HyDE) | HyDE-wired (100% fallback) | delta   |
-|---------------|---------------------|-----------------------------|---------|
-| `hit_at_5`    | 0.7067              | 0.7067                       | +0.0000 |
-| `mrr_at_10`   | 0.5893              | 0.5693                       | -0.0200 |
-| `ndcg`        | 0.5620              | 0.5530                       | -0.0090 |
+**Attempt 2 — real Anthropic key seeded, but the container DNS
+broke mid-session.** The operator seeded a real
+`anthropic_api_key` in dev Vault and asked for a re-run. By the
+time the HyDE rewire landed, Docker Desktop's container DNS
+forwarder (`127.0.0.11`) had stopped resolving any external host —
+`api.anthropic.com`, `google.com`, `github.com`, and `pypi.org` all
+returned `EAI_AGAIN` from inside the api container. Restarting api
++ vault, recreating the container, and trying explicit `--dns
+8.8.8.8 --dns 1.1.1.1` all failed. So HyDE again fell back 100%,
+this time for a different reason — and `docker compose down`
+wiped the dev-Vault's seeded key (in-memory storage). The retest
+is structurally unable to run in this Docker Desktop on Windows
+state without a daemon restart.
 
-The MRR / nDCG dip is **ANN noise** — pgvector's ivfflat index
-(`lists=100`) gives slightly different top-30 orderings across calls
-when the index hasn't been re-clustered between runs. With every
-HyDE call falling back to the raw question, the embedding inputs are
-identical to T032; only the index's approximate-nearest-neighbor
-ordering changed. The noise floor for this corpus is on the order
-of 0.02 on MRR — single-question rank shifts in the bottom of the
-top-30 can flip a few golden hits in or out of top-5.
+| metric        | post-T032 (no HyDE) | HyDE-wired, key=n/a (100% fallback) | HyDE-wired, DNS-broken (100% fallback) |
+|---------------|---------------------|-------------------------------------|----------------------------------------|
+| `hit_at_5`    | 0.7067              | 0.7067                              | n/a (eval skipped)                     |
+| `mrr_at_10`   | 0.5893              | 0.5693                              | n/a                                    |
+| `ndcg`        | 0.5620              | 0.5530                              | n/a                                    |
 
-**Decision: revert the wiring.** Per strict T034 protocol ("if it
-doesn't beat, revert the wiring in the same commit"), the
-`retrieve_service` change is removed. `prompts/hyde.md` and
-`hyde_service.py` stay in the repo — they parse cleanly and the
-service's fallback contract is honoured, so once the operator sets
-a real `anthropic_api_key` in Vault, **one line of code** (re-add
-`hyde_service.transform(...)` ahead of the embed call) re-enables
-HyDE and a re-run produces a meaningful delta number.
+The MRR / nDCG dips in the attempt-1 column are **ANN noise**
+(pgvector's ivfflat `lists=100` index gives slightly different
+top-30 orderings across calls), not a HyDE signal — the embedding
+input was the raw question both times because HyDE fell back.
 
-**Trigger to re-evaluate:** operator runs
-`docker compose exec vault sh -c 'VAULT_TOKEN=root VAULT_ADDR=http://localhost:8200 vault kv patch secret/maintainers-copilot anthropic_api_key=sk-…'`
-then re-runs `evals/rag/eval_rag.py --mode advanced` with the HyDE
-wiring restored. If hit_at_5 improves by ≥ 2pp (above the ANN noise
-floor), keep HyDE; otherwise the dropped state stands and a
-DECISIONS.md follow-up records the negative real-API result.
+**Decision: keep the wiring dropped, in-repo for future use.** Per
+T034 protocol ("if it doesn't beat, revert"). `prompts/hyde.md`
+and `hyde_service.py` both stay; the service's fallback contract is
+honoured; re-wiring is one line in `retrieve_service`.
 
-Source: `/tmp/rag_eval/advanced_t034.json` for the fallback-mode
-numbers; api log line "HyDE generation failed (anthropic_api_key is
-empty in Vault…)" confirms the 100% fallback.
+**Triggers to re-evaluate:**
+
+1. Restart Docker Desktop to restore container DNS.
+2. Re-seed the Anthropic key in dev Vault:
+   `docker compose exec vault sh -c 'VAULT_TOKEN=root VAULT_ADDR=http://localhost:8200 vault kv patch secret/maintainers-copilot anthropic_api_key=sk-…'`
+3. Re-add `text_to_embed, _ = hyde_service.transform(req.question)`
+   ahead of the embed call in `retrieve_service.retrieve()`.
+4. Run `evals/rag/eval_rag.py --mode advanced --with-generation`.
+   Ship HyDE if hit_at_5 improves by ≥ 2pp above the ANN noise
+   floor; otherwise drop with the real-key numbers documented.
+
+Sources: `/tmp/rag_eval/advanced_t034.json` (attempt 1, fallback
+mode); the api log line "HyDE generation failed (anthropic
+unreachable: Connection error.)" + `docker compose exec api
+python -c "import socket; socket.gethostbyname('api.anthropic.com')"`
+returning `EAI_AGAIN` confirm the attempt-2 DNS state. Neither
+report is committed; the post-T032 numbers in
+`evals/reports/{run_ts}/rag.json` remain the live state.

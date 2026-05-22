@@ -102,11 +102,12 @@ def retrieve(
 
     corpus_run_id = get_settings().rag_corpus_run_id
 
-    # T034 — HyDE wiring was tested and DROPPED in this environment
-    # (Anthropic key is `n/a` in Vault → 100% fallback to raw
-    # question, no usable delta). See DECISIONS.md
-    # "## RAG HyDE (T034) — DROPPED pending Anthropic key".
-    # `app/services/hyde_service.py` stays in the repo for future use.
+    # T034 — HyDE wiring tested twice (key=n/a, then with a real key
+    # under broken container DNS) and DROPPED both times. See
+    # DECISIONS.md "## RAG HyDE (T034) — DROPPED (test environment
+    # blocked the real-key retest)". hyde_service.py + prompts/hyde.md
+    # stay in the repo for future use; one-line re-wiring restores
+    # HyDE once the environment is healthy.
 
     try:
         query_embedding = embedding_client.embed(req.question, request_id=request_id)
