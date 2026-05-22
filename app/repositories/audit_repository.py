@@ -23,6 +23,7 @@ import uuid
 from typing import Any, NoReturn
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 from app.infra.database import get_engine
 
@@ -57,6 +58,7 @@ def record(
     payload: dict[str, Any] | None,
     actor_user_id: uuid.UUID | None = None,
     actor_widget_id: uuid.UUID | None = None,
+    connection: Connection | None = None,
 ) -> None:
     """Append one ``audit_log`` row.
 
@@ -65,6 +67,12 @@ def record(
 
     The legacy ``actor_id`` / ``target`` columns from migration 0001 are left
     NULL; Part 1 writes go exclusively to the new columns.
+
+    If ``connection`` is provided, the insert runs on that caller-owned
+    connection (used by ``write_memory_tool`` to bundle the audit row with
+    the memory row in a single transaction per
+    ``contracts/memory-tools.md``). Otherwise this function opens its own
+    transaction via the sync engine (legacy behavior).
     """
     user_set = actor_user_id is not None
     widget_set = actor_widget_id is not None
@@ -79,18 +87,19 @@ def record(
             "actor_widget_id must be set, neither was provided"
         )
 
+    params = {
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "payload": None if payload is None else json.dumps(payload),
+        "actor_user_id": actor_user_id,
+        "actor_widget_id": actor_widget_id,
+    }
+    if connection is not None:
+        connection.execute(_INSERT_SQL, params)
+        return
     with get_engine().begin() as conn:
-        conn.execute(
-            _INSERT_SQL,
-            {
-                "action": action,
-                "target_type": target_type,
-                "target_id": target_id,
-                "payload": None if payload is None else json.dumps(payload),
-                "actor_user_id": actor_user_id,
-                "actor_widget_id": actor_widget_id,
-            },
-        )
+        conn.execute(_INSERT_SQL, params)
 
 
 def update(*args: Any, **kwargs: Any) -> NoReturn:

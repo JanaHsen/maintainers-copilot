@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 from app.domain.memory import MemoryRecallHit
 from app.infra.database import get_engine
@@ -71,24 +72,32 @@ def insert(
     content: str,
     embedding: list[float],
     source: str = "episodic",
+    connection: Connection | None = None,
 ) -> None:
     """Insert one memory row.
 
     The CHECK on ``source`` allows only ``'episodic'`` in Part 1; passing any
     other value triggers a Postgres ``CheckViolation``.
+
+    If ``connection`` is provided, the insert runs on that connection (caller
+    owns the transaction — used by ``write_memory_tool`` to bundle this
+    insert and the audit insert into a single atomic unit per
+    ``contracts/memory-tools.md``). Otherwise this function opens its own
+    transaction via the sync engine (legacy behavior, kept for back-compat).
     """
+    params = {
+        "id": memory_id,
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "content": content,
+        "embedding_str": _vec_to_pg_str(embedding),
+        "source": source,
+    }
+    if connection is not None:
+        connection.execute(_INSERT_SQL, params)
+        return
     with get_engine().begin() as conn:
-        conn.execute(
-            _INSERT_SQL,
-            {
-                "id": memory_id,
-                "user_id": user_id,
-                "conversation_id": conversation_id,
-                "content": content,
-                "embedding_str": _vec_to_pg_str(embedding),
-                "source": source,
-            },
-        )
+        conn.execute(_INSERT_SQL, params)
 
 
 def query_top_k(
