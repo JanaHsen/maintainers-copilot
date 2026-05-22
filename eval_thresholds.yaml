@@ -54,3 +54,11 @@ ner:
 # second real run.
 summarize:
   rubric_floor: 4.3
+
+# Chatbot eval floors. Placeholder values from the spec (4 metrics) so the
+# CI gate compiles. Replaced by Phase F real-mode pilot.
+chatbot:
+  tool_selection_accuracy_floor: 0.5
+  memory_write_rate_floor: 0.5
+  memory_recall_at_3_floor: 0.5
+  widget_refusal_rate_floor: 0.5
