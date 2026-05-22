@@ -36,7 +36,9 @@ def test_ner_ok_returns_four_buckets(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(ner_service, "extract", fake_extract)
-    out = extract_entities_tool.execute({"text": "some issue text"}, _actor())
+    out = extract_entities_tool.execute(
+        {"text": "some issue text"}, _actor(), uuid.uuid4()
+    )
     assert out == {
         "entities": {
             "repo_names": ["openai/whisper"],
@@ -58,5 +60,5 @@ def test_ner_error_returns_envelope(
         return ner_service.NerError(kind=kind, detail="boom")  # type: ignore[arg-type]
 
     monkeypatch.setattr(ner_service, "extract", fake_extract)
-    out = extract_entities_tool.execute({"text": "x"}, _actor())
+    out = extract_entities_tool.execute({"text": "x"}, _actor(), uuid.uuid4())
     assert out == {"error": {"kind": kind, "detail": "boom"}}

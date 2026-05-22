@@ -16,6 +16,7 @@ Per Rule 11 this wrapper never raises out to the caller.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.domain.conversation import Actor
@@ -41,8 +42,16 @@ TOOL_DEF: dict[str, Any] = {
 }
 
 
-def execute(input: dict[str, Any], actor: Actor) -> dict[str, Any]:  # noqa: A002,ARG001
-    """Run /retrieve and return the JSON-serializable dispatch dict."""
+def execute(
+    input: dict[str, Any],  # noqa: A002
+    actor: Actor,  # noqa: ARG001
+    conversation_id: uuid.UUID,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Run /retrieve and return the JSON-serializable dispatch dict.
+
+    ``actor`` + ``conversation_id`` are accepted to match the uniform
+    dispatch signature but are unused — retrieve_context is stateless.
+    """
     query = str(input.get("query", ""))
     k = int(input.get("k", 5))
     # RetrieveRequest enforces min_length=1 + 0<=k<=20; pre-validate so the

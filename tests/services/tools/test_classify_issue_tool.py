@@ -41,7 +41,7 @@ def test_classify_ok_returns_label_confidence_scores(
         )
 
     monkeypatch.setattr(classifier_service, "classify_issue", fake_classify)
-    out = classify_issue_tool.execute({"title": "T", "body": "B"}, _actor())
+    out = classify_issue_tool.execute({"title": "T", "body": "B"}, _actor(), uuid.uuid4())
     assert out == {
         "label": "bug",
         "confidence": 0.91,
@@ -61,7 +61,7 @@ def test_classify_error_returns_envelope(
         return classifier_service.ClassifyError(kind=kind, detail="boom")  # type: ignore[arg-type]
 
     monkeypatch.setattr(classifier_service, "classify_issue", fake_classify)
-    out = classify_issue_tool.execute({"title": "T", "body": "B"}, _actor())
+    out = classify_issue_tool.execute({"title": "T", "body": "B"}, _actor(), uuid.uuid4())
     assert out == {"error": {"kind": kind, "detail": "boom"}}
 
 
@@ -76,5 +76,5 @@ def test_missing_fields_defaults_to_empty_strings(
         return classifier_service.ClassifyOk(label="bug", confidence=0.1, label_scores={})
 
     monkeypatch.setattr(classifier_service, "classify_issue", fake_classify)
-    classify_issue_tool.execute({}, _actor())
+    classify_issue_tool.execute({}, _actor(), uuid.uuid4())
     assert captured == {"title": "", "body": ""}

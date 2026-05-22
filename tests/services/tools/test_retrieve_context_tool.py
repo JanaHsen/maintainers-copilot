@@ -46,7 +46,9 @@ def test_retrieve_ok_projects_snippet(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(retrieve_service, "retrieve", fake_retrieve)
-    out = retrieve_context_tool.execute({"query": "how do I install?", "k": 3}, _actor())
+    out = retrieve_context_tool.execute(
+        {"query": "how do I install?", "k": 3}, _actor(), uuid.uuid4()
+    )
     assert captured == {"question": "how do I install?", "k": 3}
     assert out == {
         "chunks": [
@@ -68,7 +70,7 @@ def test_retrieve_ok_default_k(monkeypatch: pytest.MonkeyPatch) -> None:
         return retrieve_service.RetrieveOk(chunks=[])
 
     monkeypatch.setattr(retrieve_service, "retrieve", fake_retrieve)
-    out = retrieve_context_tool.execute({"query": "hi"}, _actor())
+    out = retrieve_context_tool.execute({"query": "hi"}, _actor(), uuid.uuid4())
     assert captured["k"] == 5
     assert out == {"chunks": []}
 
@@ -84,7 +86,7 @@ def test_retrieve_error_returns_envelope(
         return retrieve_service.RetrieveError(kind=kind, detail="boom")  # type: ignore[arg-type]
 
     monkeypatch.setattr(retrieve_service, "retrieve", fake_retrieve)
-    out = retrieve_context_tool.execute({"query": "x"}, _actor())
+    out = retrieve_context_tool.execute({"query": "x"}, _actor(), uuid.uuid4())
     assert out == {"error": {"kind": kind, "detail": "boom"}}
 
 
@@ -99,7 +101,7 @@ def test_empty_query_returns_bad_request_envelope(
         return retrieve_service.RetrieveOk(chunks=[])
 
     monkeypatch.setattr(retrieve_service, "retrieve", fake_retrieve)
-    out = retrieve_context_tool.execute({"query": ""}, _actor())
+    out = retrieve_context_tool.execute({"query": ""}, _actor(), uuid.uuid4())
     assert out == {
         "error": {"kind": "bad_request", "detail": "query must be a non-empty string"}
     }
@@ -109,7 +111,7 @@ def test_empty_query_returns_bad_request_envelope(
 def test_invalid_k_returns_bad_request_envelope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    out = retrieve_context_tool.execute({"query": "x", "k": 999}, _actor())
+    out = retrieve_context_tool.execute({"query": "x", "k": 999}, _actor(), uuid.uuid4())
     assert out["error"]["kind"] == "bad_request"
 
 

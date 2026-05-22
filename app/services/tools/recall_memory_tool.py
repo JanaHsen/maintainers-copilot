@@ -18,7 +18,7 @@ trusts that boundary and never reads memories outside the caller's user_id.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from app.domain.conversation import Actor, AuthedUser, WidgetSession
 from app.domain.memory import MemoryRecallHit
@@ -37,6 +37,25 @@ RecallMemoryErrorKind = Literal[
     "embedding_timeout",
     "db_failed",
 ]
+
+
+# Anthropic tool definition — see write_memory_tool.TOOL_DEF for rationale.
+TOOL_DEF: dict[str, Any] = {
+    "name": "recall_memory",
+    "description": (
+        "Retrieve up to k prior facts the user has shared. Use at the start "
+        "of a conversation, or when the user references something you don't "
+        "recognize but might have been told before."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "k": {"type": "integer", "minimum": 1, "maximum": 20},
+        },
+        "required": ["query"],
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -150,6 +169,7 @@ def recall_memory(
 
 
 __all__ = [
+    "TOOL_DEF",
     "RecallMemoryError",
     "RecallMemoryErrorKind",
     "RecallMemoryOk",

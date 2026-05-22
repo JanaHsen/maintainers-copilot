@@ -35,7 +35,7 @@ def test_summarize_ok_returns_summary(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(summarize_service, "summarize", fake_summarize)
     out = summarize_issue_tool.execute(
-        {"text": "long issue body", "max_sentences": 2}, _actor()
+        {"text": "long issue body", "max_sentences": 2}, _actor(), uuid.uuid4()
     )
     assert out == {"summary": "Two sentences. Done."}
     assert captured == {"text": "long issue body", "max_sentences": 2}
@@ -51,7 +51,7 @@ def test_summarize_ok_default_max_sentences(monkeypatch: pytest.MonkeyPatch) -> 
         return summarize_service.SummarizeOk(summary="x")
 
     monkeypatch.setattr(summarize_service, "summarize", fake_summarize)
-    summarize_issue_tool.execute({"text": "body"}, _actor())
+    summarize_issue_tool.execute({"text": "body"}, _actor(), uuid.uuid4())
     assert captured["max_sentences"] == 3
 
 
@@ -68,5 +68,5 @@ def test_summarize_error_returns_envelope(
         return summarize_service.SummarizeError(kind=kind, detail="boom")  # type: ignore[arg-type]
 
     monkeypatch.setattr(summarize_service, "summarize", fake_summarize)
-    out = summarize_issue_tool.execute({"text": "x"}, _actor())
+    out = summarize_issue_tool.execute({"text": "x"}, _actor(), uuid.uuid4())
     assert out == {"error": {"kind": kind, "detail": "boom"}}

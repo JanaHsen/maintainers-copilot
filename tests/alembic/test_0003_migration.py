@@ -48,8 +48,12 @@ def test_0003_migration_round_trip() -> None:
 
     cfg = _alembic_config()
 
-    # Make sure we're at head before we begin.
-    command.upgrade(cfg, "head")
+    # Park exactly on 0003 (not head) so this test stays insulated from
+    # later additive revisions (e.g. 0004_chatbot_part2 in Part 2). We
+    # downgrade first in case the suite already left us at a later head,
+    # then upgrade to land on 0003 if we were below it.
+    command.downgrade(cfg, "0003_chatbot")
+    command.upgrade(cfg, "0003_chatbot")
     assert _current_revision() == "0003_chatbot"
 
     chatbot_tables = (
@@ -134,6 +138,6 @@ def test_0003_migration_round_trip() -> None:
         for c in ("actor_user_id", "actor_widget_id", "target_type", "target_id"):
             assert c not in cols, f"audit_log still has column {c} after downgrade"
 
-    # Re-upgrade so the rest of the suite finds the tables in place.
+    # Re-upgrade so the rest of the suite finds the tables in place. We go
+    # to head (not 0003) to restore whatever the suite expects.
     command.upgrade(cfg, "head")
-    assert _current_revision() == "0003_chatbot"

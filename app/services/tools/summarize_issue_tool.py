@@ -13,6 +13,7 @@ Per Rule 11 this wrapper never raises out to the caller.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.domain.conversation import Actor
@@ -35,8 +36,16 @@ TOOL_DEF: dict[str, Any] = {
 }
 
 
-def execute(input: dict[str, Any], actor: Actor) -> dict[str, Any]:  # noqa: A002,ARG001
-    """Run the summarize service and return the JSON-serializable dispatch dict."""
+def execute(
+    input: dict[str, Any],  # noqa: A002
+    actor: Actor,  # noqa: ARG001
+    conversation_id: uuid.UUID,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Run the summarize service and return the JSON-serializable dispatch dict.
+
+    ``actor`` + ``conversation_id`` are accepted to match the uniform
+    dispatch signature but are unused — summarize_issue is stateless.
+    """
     text = str(input.get("text", ""))
     max_sentences = int(input.get("max_sentences", 3))
     outcome = summarize_service.summarize(text, max_sentences=max_sentences)

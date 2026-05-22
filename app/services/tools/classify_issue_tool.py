@@ -14,6 +14,7 @@ error becomes the typed error envelope.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.domain.conversation import Actor
@@ -37,8 +38,17 @@ TOOL_DEF: dict[str, Any] = {
 }
 
 
-def execute(input: dict[str, Any], actor: Actor) -> dict[str, Any]:  # noqa: A002,ARG001
-    """Run the classifier and return the JSON-serializable dispatch dict."""
+def execute(
+    input: dict[str, Any],  # noqa: A002
+    actor: Actor,  # noqa: ARG001
+    conversation_id: uuid.UUID,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Run the classifier and return the JSON-serializable dispatch dict.
+
+    ``actor`` + ``conversation_id`` are accepted to match the uniform
+    dispatch signature in :mod:`app.services.tools` but are unused here —
+    classify_issue is stateless.
+    """
     title = str(input.get("title", ""))
     body = str(input.get("body", ""))
     outcome = classifier_service.classify_issue(title=title, body=body)

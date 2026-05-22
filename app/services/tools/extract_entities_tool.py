@@ -15,6 +15,7 @@ dict so the loop's ``json.dumps(..., default=str)`` produces a clean
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.domain.conversation import Actor
@@ -37,8 +38,16 @@ TOOL_DEF: dict[str, Any] = {
 }
 
 
-def execute(input: dict[str, Any], actor: Actor) -> dict[str, Any]:  # noqa: A002,ARG001
-    """Run the NER service and return the JSON-serializable dispatch dict."""
+def execute(
+    input: dict[str, Any],  # noqa: A002
+    actor: Actor,  # noqa: ARG001
+    conversation_id: uuid.UUID,  # noqa: ARG001
+) -> dict[str, Any]:
+    """Run the NER service and return the JSON-serializable dispatch dict.
+
+    ``actor`` + ``conversation_id`` are accepted to match the uniform
+    dispatch signature but are unused — extract_entities is stateless.
+    """
     text = str(input.get("text", ""))
     outcome = ner_service.extract(text)
     if isinstance(outcome, ner_service.NerOk):

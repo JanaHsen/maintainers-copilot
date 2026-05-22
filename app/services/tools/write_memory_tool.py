@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from app.domain.conversation import Actor, AuthedUser, WidgetSession
 from app.infra.database import get_engine
@@ -40,6 +40,27 @@ WriteMemoryErrorKind = Literal[
     "audit_failed",
     "db_failed",
 ]
+
+
+# Anthropic tool definition. The chatbot agent loop (Part 2) registers this
+# alongside the other five wrappers via app.services.tools.TOOLS. Adding the
+# constant here keeps the tool def colocated with the executor it describes
+# (Rule 9).
+TOOL_DEF: dict[str, Any] = {
+    "name": "write_memory",
+    "description": (
+        "Save a fact about the user for future conversations. Use sparingly: "
+        "only when the user shares a preference, an identity, or context "
+        "likely to be useful later. Do not write trivial chat."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "content": {"type": "string"},
+        },
+        "required": ["content"],
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -194,6 +215,7 @@ class _AuditFailedError(Exception):
 
 
 __all__ = [
+    "TOOL_DEF",
     "WriteMemoryError",
     "WriteMemoryErrorKind",
     "WriteMemoryOk",
