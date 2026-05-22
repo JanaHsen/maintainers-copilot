@@ -25,7 +25,7 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +50,7 @@ REPORTS_ROOT = Path(__file__).resolve().parents[2] / "evals" / "reports"
 
 
 def _utc_run_ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _golden_set_hash(rows: list[dict[str, Any]]) -> str:
@@ -423,7 +423,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--skip-upload", action="store_true",
-        help="Skip MinIO upload (default when neither --upload-report nor --skip-upload is set is to print only).",
+        help=(
+            "Skip MinIO upload (default when neither --upload-report nor "
+            "--skip-upload is set is to print only)."
+        ),
     )
     parser.add_argument(
         "--check-thresholds", action="store_true",
@@ -472,7 +475,12 @@ def main(argv: list[str] | None = None) -> int:
         generation_metrics=generation_block,
     )
 
-    print(json.dumps({"retrieval": report["retrieval"], "n_examples": report["n_examples"]}, indent=2))
+    print(
+        json.dumps(
+            {"retrieval": report["retrieval"], "n_examples": report["n_examples"]},
+            indent=2,
+        )
+    )
 
     if args.output:
         out_path = Path(args.output)

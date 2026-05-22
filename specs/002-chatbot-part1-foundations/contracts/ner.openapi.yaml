@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: Maintainer's Copilot — NER API
+  version: 0.1.0
+  description: |
+    Entity extraction from issue text. Backed by app/services/ner_service.py
+    which calls Anthropic with the prompt at prompts/ner.md. Output schema
+    is a fixed 4-bucket JSON shape (research R7).
+
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /ner:
+    post:
+      summary: Extract entities from issue text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NerRequest'
+      responses:
+        '200':
+          description: Entities extracted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NerResponse'
+        '400':
+          description: Malformed request (empty text, oversized payload).
+        '502':
+          description: Upstream Anthropic returned an unexpected body or 5xx.
+        '503':
+          description: Anthropic unreachable / auth error / not configured.
+        '504':
+          description: Anthropic timed out.
+
+components:
+  schemas:
+    NerRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 32000
+          description: Issue title + body concatenated, or a single message.
+      required: [text]
+
+    EntityBuckets:
+      type: object
+      properties:
+        repo_names:
+          type: array
+          items: { type: string }
+          description: "GitHub-style owner/repo references (e.g. acme/widget)."
+        file_paths:
+          type: array
+          items: { type: string }
+          description: "Filesystem paths mentioned in the text."
+        error_types:
+          type: array
+          items: { type: string }
+          description: "Class-shaped error names (e.g. ConnectionError)."
+        package_names:
+          type: array
+          items: { type: string }
+          description: "Importable package or library names (e.g. numpy)."
+      required: [repo_names, file_paths, error_types, package_names]
+
+    NerResponse:
+      type: object
+      properties:
+        entities: { $ref: '#/components/schemas/EntityBuckets' }
+        request_id: { type: string }
+        trace_id: { type: string }
+      required: [entities, request_id, trace_id]

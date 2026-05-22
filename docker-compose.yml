@@ -88,6 +88,10 @@ services:
       # Unset by default: vault_seed.sh then preserves any already-stored PAT
       # instead of clobbering it. Operators export GITHUB_PAT for the dataset.
       GITHUB_PAT: ${GITHUB_PAT:-}
+      # First-admin bootstrap credentials (Fix 2). vault_seed.sh writes them
+      # to Vault on FIRST run; subsequent runs preserve whatever is in Vault.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     volumes:
       - ./scripts:/seed:ro
     restart: "no"
@@ -110,6 +114,29 @@ services:
       vault:
         condition: service_healthy
       vault-seed:
+        condition: service_completed_successfully
+
+  # One-shot: create the first admin user once migrate + vault-seed have
+  # completed (Fix 2). Idempotent — re-runs after the first are no-ops.
+  # Reads BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD from Vault, NOT
+  # from env (Rule 2 — credentials never enter the process via env).
+  admin-bootstrap:
+    build: .
+    image: mcp-api:latest
+    command: ["python", "-m", "app.bootstrap.admin_bootstrap"]
+    env_file: .env
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      vault-seed:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
 
   api:
@@ -160,6 +187,8 @@ services:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       MODEL_RUN_ID: ${MODEL_RUN_ID}
       DATASET_RUN_ID: ${DATASET_RUN_ID}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     ports:
       - "${MODEL_SERVER_PORT:-8001}:8001"
     depends_on:

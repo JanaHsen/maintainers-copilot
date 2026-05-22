@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,9 +25,9 @@ from app.config import get_settings
 from app.domain.retrieve import ChunkFilters
 from app.infra import embedding_client
 from app.repositories import chunk_repository
-from evals.rag.eval_rag import _dedup_preserve_order  # noqa: F401  (kept for compat)
 from evals.rag.eval_rag import (
     GOLDEN_PATH,
+    _dedup_preserve_order,  # noqa: F401  (kept for compat)
     compute_metrics,
     load_golden,
 )

@@ -756,3 +756,142 @@ prototype against the same 25-row golden set.
 
 Source: course materials "GraphRAG vs flat RAG" decision matrix
 (four-bullet criterion list).
+
+# Chatbot Part 1 — Foundations
+
+## NER + summarize services built in Part 1 (scope expansion vs. brief)
+
+The Part 1 brief said the chatbot agent would have six tools wrapping
+`/classify`, `/ner`, `/summarize`, `/retrieve`, `write_memory`,
+`recall_memory`, and described the first four as "wrapping existing
+endpoints." When we inventoried, `classifier_service` and
+`retrieve_service` existed but `ner_service` and `summarize_service`
+did not — only `/retrieve` and `/health` were mounted as routers.
+
+We expanded Part 1's scope to build the two missing services here
+rather than dropping them, stubbing them, or pushing them into Part 2.
+
+**Rationale.** Stubbed tools mean Part 2's tool-selection eval is partly
+fictional, violating Rules 5 and 6 (every claim backed by numbers).
+Dropping to a 4-tool agent is a larger structural divergence from the
+brief than filling the gap. Pushing the services into Part 2 muddies
+Part 2's focus on the agent loop + eval and adds ~½ day of
+service-creation work to a Part that already carries 15 conversation
+evals.
+
+**Implementation cost.** ~150 LOC each (one Anthropic call, one
+prompt, one router, one typed-outcome service); minimal eval sets at
+`evals/ner/golden.jsonl` (10 examples, programmatic F1) and
+`evals/summarize/golden.jsonl` (10 examples, frozen Claude Haiku
+rubric judge). Floors at `eval_thresholds.yaml.ner.f1_floor=0.60`
+and `summarize.rubric_floor=3.5` (conservative pilot values; both
+non-zero per Rule 4, to be revisited after a real-API pilot run).
+
+**Source.** Spec §Assumptions, plan.md §Summary, research.md R7/R8,
+operator-confirmed via the pre-Phase-A clarification exchange.
+
+## Parallel async SQLAlchemy engine for fastapi-users (justified deviation)
+
+fastapi-users-db-sqlalchemy requires an `AsyncSession`. The rest of
+`app/` (RAG + classifier + health) runs on the sync engine from
+`app/infra/database.py`. Part 1 introduces `app/infra/database_async.py`
+as a parallel engine scoped strictly to fastapi-users' `users` table
+work.
+
+**Rationale.** Migrating every existing repository to async would
+expand Part 1's scope by ~1-2 days and risk regressions in the
+already-shipped RAG slice. Running two engines against the same
+database is safe because they operate on disjoint tables. The cost is
+one extra adapter file (`database_async.py`, ~50 LOC) and one extra
+fixture pattern in `tests/repositories/test_user_repository.py`.
+
+**Alternatives rejected.** Switching the whole project to async is
+out of scope. Wrapping fastapi-users in `run_in_threadpool` is brittle
+(its `BaseUserManager`, `SQLAlchemyUserDatabase`, and `JWTStrategy`
+interlock with the async lifecycle).
+
+**Source.** Plan §Complexity Tracking (the one row), research.md R1.
+
+## Redaction at persistence boundary AND log handler (two layers)
+
+The existing redaction layer (`app/infra/log_redaction.py`'s
+`RedactingFilter`) ran at log emission only. Part 1 adds
+`redact_for_persistence(text)` and calls it from `write_memory_tool`
+and `short_term_memory_service.append` BEFORE the content reaches
+Postgres / Redis.
+
+**Rationale.** Without the persistence-boundary layer, a maintainer
+who pastes `sk-ant-…` into a chat message that becomes a
+`write_memory` call would persist the secret unredacted into Postgres
+even though the log line was redacted. That is a Rule 2 / Rule 7
+hole. The redaction-test suite (`tests/infra/test_log_redaction.py`,
+12 cases) asserts both the log path and the persistence helper
+replace `sk-ant-…`, JWTs, and email addresses with placeholders.
+
+The two layers stay because not every redactable text passes through
+the persistence path — uncaught exception messages from libraries we
+don't control reach the log path directly.
+
+**Rules covered.** Persistence redaction is conservative: a benign
+technical phrase like "ConnectionError on the requests package" is
+left untouched. Only strings matching known secret/PII shapes are
+replaced. The four placeholders are `[REDACTED]`, `[REDACTED_JWT]`,
+`[REDACTED_EMAIL]`, and `[REDACTED]` again for the generic 40+-char
+opaque-token catchall.
+
+**Source.** Research.md R6, T004 commit, T020 + T018 implementation.
+
+## Part 1 eval floors set from real pilot
+
+**Date**: 2026-05-22.
+
+**Replaces**: the conservative placeholder floors set in T038
+(`ner.f1_floor=0.60`, `summarize.rubric_floor=3.5`) — flagged in the Part 1
+status comment as "to be revisited after a real-API pilot run."
+
+**Observed scores** (real-API run via `python -m evals.ner.eval_ner
+--mode=real` and `python -m evals.summarize.eval_summarize --mode=real`
+against the live stack):
+
+- **NER** aggregate micro-F1: **0.9508** on 10 examples.
+  - `repo_names` F1 = 1.0
+  - `file_paths` F1 = 0.947
+  - `error_types` F1 = 1.0
+  - `package_names` F1 = 0.875
+- **Summarize** aggregate (mean across the three rubric dimensions on a
+  1-5 scale): **4.833** (run 1), **4.767** (run 2 — judge variance).
+  - `faithfulness` mean ≈ 4.6-4.9
+  - `conciseness` mean ≈ 4.6-4.9
+  - `intent` mean ≈ 4.8-5.0
+
+**Floors landed**:
+
+- `ner.f1_floor` = **0.9** (~5 points below observed).
+- `summarize.rubric_floor` = **4.3** (~5 points below the lower observed
+  run; absorbs ~10 dimension-flips of judge variance while still catching
+  a real regression).
+
+**Gap and noise budget**:
+
+- NER: 0.05 absolute gap. On 10 examples, one misclassification swings a
+  bucket F1 by ~10 points; the floor will catch a structural regression
+  but not the noise of one bad example. Adequate for a small golden set.
+- Summarize: 0.467 absolute gap. The judge is frozen Claude Haiku
+  (research R8); run-to-run variance was 0.066 across the two pilot runs.
+  ~14× the observed variance, so the floor will not false-alarm.
+
+**Fixtures regenerated**:
+
+- `evals/ner/fixture_outputs.jsonl` from the real run; fixture-mode now
+  reproduces aggregate F1 = 0.9508.
+- `evals/summarize/fixture_outputs.jsonl` from the second real run;
+  fixture-mode reproduces aggregate = 4.767.
+
+This matters because CI runs `--mode=fixture` against these files; a stale
+fixture (e.g. seeded from the perfect-prediction placeholder) would mean
+the CI gate isn't measuring anything meaningful. Both fixture files now
+embed the same outputs the real model produced.
+
+**Trigger to revisit**: if observed scores trend consistently above 0.95 /
+4.85 over several pushes, floors can move up. If the golden set grows
+beyond 10 examples (or the prompts change versions), re-pilot and rederive.

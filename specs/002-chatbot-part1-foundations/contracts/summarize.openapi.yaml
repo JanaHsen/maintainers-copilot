@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Maintainer's Copilot — Summarize API
+  version: 0.1.0
+  description: |
+    2-3 sentence issue summary. Backed by app/services/summarize_service.py
+    which calls Anthropic with the prompt at prompts/summarizer.md (existing).
+
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /summarize:
+    post:
+      summary: Summarize issue text in 2-3 sentences.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SummarizeRequest'
+      responses:
+        '200':
+          description: Summary produced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummarizeResponse'
+        '400':
+          description: Malformed request.
+        '502':
+          description: Upstream Anthropic returned an unexpected body or 5xx.
+        '503':
+          description: Anthropic unreachable / auth error.
+        '504':
+          description: Anthropic timed out.
+
+components:
+  schemas:
+    SummarizeRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        max_sentences:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 3
+      required: [text]
+
+    SummarizeResponse:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: "Plain-text summary, 2-3 sentences by default."
+        request_id: { type: string }
+        trace_id: { type: string }
+      required: [summary, request_id, trace_id]

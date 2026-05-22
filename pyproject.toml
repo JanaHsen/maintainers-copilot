@@ -24,6 +24,7 @@ dependencies = [
   "pyarrow>=17.0",
   "psycopg[binary]>=3.2",
   "anthropic>=0.40",
+  "fastapi-users[sqlalchemy]>=14",
 ]
 
 [dependency-groups]
@@ -57,6 +58,7 @@ target-version = "py312"
 # Colab notebooks have cell-scoped imports (E402 by construction); they are
 # exploratory and not part of the linted/typed surface.
 extend-exclude = ["notebooks", "*.ipynb"]
+exclude = ["tests/manual"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]

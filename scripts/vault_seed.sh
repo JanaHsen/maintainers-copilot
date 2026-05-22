@@ -31,11 +31,18 @@ for _ in {1..30}; do
   sleep 1
 done
 
-# Preserve any existing github_pat / anthropic_api_key unless a new one is
-# supplied via env. Both keys are operator-supplied — github_pat for the
-# dataset fetch, anthropic_api_key for the model server's /summarize.
+# Preserve any existing github_pat / anthropic_api_key / auth_jwt_secret /
+# bootstrap_admin_* unless a new value is supplied via env. github_pat +
+# anthropic_api_key are operator-supplied; auth_jwt_secret is auto-generated
+# on first boot if absent (Rule 2 / research R2 — never read from env);
+# bootstrap_admin_* come from .env via BOOTSTRAP_ADMIN_EMAIL /
+# BOOTSTRAP_ADMIN_PASSWORD on first seed, then are preserved on subsequent
+# runs so re-running this script never resets the admin password.
 existing_pat=""
 existing_anthropic=""
+existing_auth_jwt=""
+existing_bootstrap_email=""
+existing_bootstrap_password=""
 existing_json="$(curl -fsS -H "X-Vault-Token: ${VAULT_DEV_ROOT_TOKEN_ID}" "${SECRET_URL}" 2>/dev/null || true)"
 if [ -n "${existing_json}" ]; then
   existing_pat="$(printf '%s' "${existing_json}" \
@@ -43,6 +50,15 @@ if [ -n "${existing_json}" ]; then
     | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
   existing_anthropic="$(printf '%s' "${existing_json}" \
     | grep -o '"anthropic_api_key"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
+  existing_auth_jwt="$(printf '%s' "${existing_json}" \
+    | grep -o '"auth_jwt_secret"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
+  existing_bootstrap_email="$(printf '%s' "${existing_json}" \
+    | grep -o '"bootstrap_admin_email"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
+  existing_bootstrap_password="$(printf '%s' "${existing_json}" \
+    | grep -o '"bootstrap_admin_password"[[:space:]]*:[[:space:]]*"[^"]*"' \
     | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' || true)"
 fi
 
@@ -56,6 +72,25 @@ if [ -z "${anthropic_api_key}" ]; then
   echo "note: no ANTHROPIC_API_KEY supplied and none stored; seeding empty anthropic_api_key (/summarize will return 503 until one is provided)."
 fi
 
+# auth_jwt_secret: never operator-supplied via env (Rule 2). If absent in
+# Vault, generate a fresh 32-byte hex value here. Stable across restarts
+# because we preserve the existing value.
+auth_jwt_secret="${existing_auth_jwt}"
+if [ -z "${auth_jwt_secret}" ]; then
+  auth_jwt_secret="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  echo "note: generated a fresh auth_jwt_secret (chatbot Part 1 fastapi-users JWT signing key)."
+fi
+
+# bootstrap_admin_* on first seed come from BOOTSTRAP_ADMIN_EMAIL /
+# BOOTSTRAP_ADMIN_PASSWORD env vars (sourced from .env above). On subsequent
+# seeds we preserve whatever Vault already has so re-running this script
+# never resets the admin password.
+bootstrap_admin_email="${BOOTSTRAP_ADMIN_EMAIL:-${existing_bootstrap_email}}"
+bootstrap_admin_password="${BOOTSTRAP_ADMIN_PASSWORD:-${existing_bootstrap_password}}"
+if [ -z "${bootstrap_admin_email}" ] || [ -z "${bootstrap_admin_password}" ]; then
+  echo "note: BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD unset and not in Vault; admin-bootstrap will refuse to run until you set them in .env and re-seed."
+fi
+
 echo "Seeding secret/maintainers-copilot..."
 curl -fsS -X POST \
   -H "X-Vault-Token: ${VAULT_DEV_ROOT_TOKEN_ID}" \
@@ -66,7 +101,10 @@ curl -fsS -X POST \
     "database_password": "dev_postgres_password",
     "minio_root_password": "dev_minio_password",
     "github_pat": "${github_pat}",
-    "anthropic_api_key": "${anthropic_api_key}"
+    "anthropic_api_key": "${anthropic_api_key}",
+    "auth_jwt_secret": "${auth_jwt_secret}",
+    "bootstrap_admin_email": "${bootstrap_admin_email}",
+    "bootstrap_admin_password": "${bootstrap_admin_password}"
   }
 }
 JSON

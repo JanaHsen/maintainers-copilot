@@ -10,7 +10,7 @@ unmodified through to the repository.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 from app.domain.retrieve import (
@@ -49,20 +49,20 @@ def test_filters_issues_only_passes_through() -> None:
 
 def test_filters_time_window_passes_through() -> None:
     req = _make_request(filters=RetrieveFilters(
-        **{"from": datetime(2024, 1, 1, tzinfo=timezone.utc),
-           "to": datetime(2024, 12, 31, tzinfo=timezone.utc)}
+        **{"from": datetime(2024, 1, 1, tzinfo=UTC),
+           "to": datetime(2024, 12, 31, tzinfo=UTC)}
     ))
     cf = _filters_from_request(req)
-    assert cf.from_ == datetime(2024, 1, 1, tzinfo=timezone.utc)
-    assert cf.to == datetime(2024, 12, 31, tzinfo=timezone.utc)
+    assert cf.from_ == datetime(2024, 1, 1, tzinfo=UTC)
+    assert cf.to == datetime(2024, 12, 31, tzinfo=UTC)
 
 
 def test_filters_from_after_to_is_rejected_by_validator() -> None:
     import pytest
     with pytest.raises(ValueError):
         RetrieveFilters(
-            **{"from": datetime(2024, 12, 1, tzinfo=timezone.utc),
-               "to": datetime(2024, 1, 1, tzinfo=timezone.utc)}
+            **{"from": datetime(2024, 12, 1, tzinfo=UTC),
+               "to": datetime(2024, 1, 1, tzinfo=UTC)}
         )
 
 
@@ -76,7 +76,7 @@ def test_filters_threaded_through_retrieve_service_to_repository() -> None:
             ChildHit(
                 chunk_id="c1", parent_id="p1", content="x",
                 source_type="docs", source_id="readme.md",
-                source_timestamp=datetime(2024, 6, 1, tzinfo=timezone.utc),
+                source_timestamp=datetime(2024, 6, 1, tzinfo=UTC),
                 section_path="", score=0.9,
             )
         ]
@@ -86,7 +86,7 @@ def test_filters_threaded_through_retrieve_service_to_repository() -> None:
             "p1": Parent(
                 chunk_id="p1", content="parent text",
                 source_type="docs", source_id="readme.md",
-                source_timestamp=datetime(2024, 6, 1, tzinfo=timezone.utc),
+                source_timestamp=datetime(2024, 6, 1, tzinfo=UTC),
                 section_path="", metadata={},
             )
         }
@@ -99,7 +99,11 @@ def test_filters_threaded_through_retrieve_service_to_repository() -> None:
     # rerank is currently dropped (DECISIONS.md T033) so no need to mock it.
 
     with (
-        patch.object(retrieve_service.chunk_repository, "query_first_stage", _fake_query_first_stage),
+        patch.object(
+            retrieve_service.chunk_repository,
+            "query_first_stage",
+            _fake_query_first_stage,
+        ),
         patch.object(retrieve_service.chunk_repository, "fetch_parents", _fake_fetch_parents),
         patch.object(retrieve_service.embedding_client, "embed", _fake_embed),
     ):
