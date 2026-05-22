@@ -1,13 +1,18 @@
 """Conversation repository — the only place ``conversations`` /
 ``messages`` SQL lives (Rule 1).
 
-Four functions:
+Five functions:
 
   * :func:`create` — insert a new ``conversations`` row for either an
     authenticated user (user_id set) OR a widget session
     (widget_id + session_id set). The actor-exclusivity CHECK at the DB
     level (FR-019) rejects any other combination.
   * :func:`get` — fetch one conversation by id.
+  * :func:`get_by_widget_session` — look up the conversation id for a
+    ``(widget_id, session_id)`` tuple. The widget chat router uses this
+    to reuse the same conversation across messages from one visitor
+    session (spec §3 — "creates/looks up a conversation tied to
+    (widget_id, session_id)").
   * :func:`append_message` — insert a new ``messages`` row in the same
     statement that updates ``conversations.last_message_at``.
   * :func:`list_messages` — return all messages for a conversation in
@@ -42,6 +47,18 @@ _GET_CONVERSATION_SQL = text(
     SELECT id, user_id, widget_id, session_id, created_at, last_message_at
     FROM conversations
     WHERE id = :id
+    """
+)
+
+
+_GET_BY_WIDGET_SESSION_SQL = text(
+    """
+    SELECT id
+    FROM conversations
+    WHERE widget_id = :widget_id
+      AND session_id = :session_id
+    ORDER BY created_at ASC
+    LIMIT 1
     """
 )
 
@@ -115,6 +132,28 @@ def get(conversation_id: uuid.UUID) -> Conversation | None:
         created_at=row.created_at,
         last_message_at=row.last_message_at,
     )
+
+
+def get_by_widget_session(
+    widget_id: uuid.UUID, session_id: str
+) -> uuid.UUID | None:
+    """Return the conversation id bound to ``(widget_id, session_id)``, if any.
+
+    A widget visitor's session_id is stable across messages (HMAC-signed
+    cookie in Part 3), so the widget chat router pins all messages from
+    one visitor session to one ``conversations`` row. Returns the oldest
+    matching id when more than one exists — the partial uniqueness story
+    is enforced by the caller (the router creates at most one row per
+    session_id) so the ``ORDER BY ... LIMIT 1`` is defensive only.
+    """
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            _GET_BY_WIDGET_SESSION_SQL,
+            {"widget_id": widget_id, "session_id": session_id},
+        ).first()
+    if row is None:
+        return None
+    return uuid.UUID(str(row.id))
 
 
 def append_message(

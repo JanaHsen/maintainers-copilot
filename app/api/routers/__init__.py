@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routers import auth, health, ner, retrieve, summarize
+from app.api.routers import auth, chat, health, ner, retrieve, summarize
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -10,3 +10,4 @@ api_router.include_router(retrieve.router)
 api_router.include_router(auth.router)
 api_router.include_router(ner.router)
 api_router.include_router(summarize.router)
+api_router.include_router(chat.router)
