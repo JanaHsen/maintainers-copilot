@@ -256,6 +256,25 @@ def _persist_assistant_text(
     )
 
 
+def _redact_payload(value: Any) -> Any:
+    """Recursively redact string leaves of a tool_input/tool_output dict.
+
+    Sonnet may pass user-supplied content verbatim into a tool's input
+    (notably the ``content`` arg of ``write_memory``). The string would
+    otherwise land in ``messages.tool_input`` JSONB and in Redis raw.
+    Redaction at the persistence boundary closes the same hole that
+    ``write_memory_tool`` already closes for ``chatbot_memories.content``
+    (research R6 / Part 1 redaction-at-persistence layer).
+    """
+    if isinstance(value, str):
+        return redact_for_persistence(value)
+    if isinstance(value, dict):
+        return {k: _redact_payload(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_payload(v) for v in value]
+    return value
+
+
 def _persist_tool_message(
     *,
     conversation_id: uuid.UUID,
@@ -269,24 +288,27 @@ def _persist_tool_message(
     ``content`` is a JSON-stringified ``tool_output`` so the Postgres row
     can be inspected without joining JSONB columns. ``tool_input`` and
     ``tool_output`` are also stored as structured JSONB for downstream
-    analysis (per ``data-model.md §4``).
+    analysis (per ``data-model.md §4``). All three string surfaces are
+    run through ``_redact_payload`` so secrets/PII don't reach storage.
     """
-    content = json.dumps(tool_output, default=str)
+    redacted_input = _redact_payload(tool_input)
+    redacted_output = _redact_payload(tool_output)
+    content = json.dumps(redacted_output, default=str)
     conversation_repository.append_message(
         conversation_id=conversation_id,
         role="tool",
         content=content,
         tool_name=tool_name,
-        tool_input=tool_input,
-        tool_output=tool_output,
+        tool_input=redacted_input,
+        tool_output=redacted_output,
     )
     short_term_memory_service.append(
         conversation_id,
         "tool",
         content,
         tool_name=tool_name,
-        tool_input=tool_input,
-        tool_output=tool_output,
+        tool_input=redacted_input,
+        tool_output=redacted_output,
         ttl_seconds=ttl_seconds,
     )
 

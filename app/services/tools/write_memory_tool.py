@@ -17,6 +17,7 @@ back atomically (FR-021).
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -177,6 +178,15 @@ def write_memory(
                         target_type="memory",
                         target_id=str(memory_id),
                         payload={
+                            "conversation_id": str(conversation_id),
+                            "memory_id": str(memory_id),
+                            # sha256 of the REDACTED content (Part 2 brief
+                            # §7). Lets the admin panel correlate audit rows
+                            # to chatbot_memories rows without leaking raw
+                            # content into the payload.
+                            "content_hash": hashlib.sha256(
+                                redacted_content.encode("utf-8")
+                            ).hexdigest(),
                             "content_bytes": content_bytes,
                             "source": source,
                             "trace_id": trace_id,
