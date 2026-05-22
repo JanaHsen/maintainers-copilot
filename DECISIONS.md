@@ -1045,3 +1045,61 @@ prove the secret was seen — defeats the whole point of redaction.
 No reader exists yet (Part 3 admin panel is the consumer).
 
 **Tested by**: `tests/integration/test_chatbot_redaction.py`.
+
+## Chatbot eval floors reflect small-set noise tolerance, not tight quality bounds
+
+The chatbot golden set has 15 scenarios spread across 4 metrics (3-5 per
+metric). On a 3-scenario metric, one scenario flake is a 33-point swing;
+on a 4-scenario metric, 25 points. The standard "5pt below observed"
+buffer used elsewhere in the project (RAG hit_at_5, NER F1, summarize
+rubric) is mathematically impossible here without gating CI on routine
+model variance.
+
+Observed pilot (2026-05-23): 0.80 / 1.00 / 1.00 / 1.00 across the four
+metrics. Floors landed at 0.7 across the board.
+
+**Read the floors correctly**: they are *regression gates* ("at least
+most scenarios still pass on the next push"), not *quality bounds*
+("the agent demonstrably hits X% accuracy"). A floor of 0.7 on a
+3-scenario metric means "2 of 3 must pass" — a real signal that the
+agent has not broken catastrophically, but not a tight quality claim.
+
+**Trigger to tighten**: grow the chatbot golden set to ~40 scenarios
+post-Week-7. Once each metric has ≥10 scenarios, one flake is ≤10pt
+and a 5pt buffer below observed becomes the right shape, matching
+the rest of the project's eval gates.
+
+## STM history projection skips `role='tool'` entries; deferred
+
+`app/services/chatbot_service.py::_stm_window_to_messages` projects the
+short-term-memory window to Anthropic-shaped messages but skips every
+`role='tool'` entry. The agent receives user + assistant text from
+prior turns but no tool_use / tool_result blocks. Each turn's tool
+calls are independent of every prior turn's tool calls.
+
+**Why**: Anthropic's tool-use protocol requires `tool_use_id`-linked
+tool_result blocks to follow their corresponding `tool_use` blocks
+within the same conversation slice. STM stores `tool_name` /
+`tool_input` / `tool_output` but does NOT preserve the `tool_use_id`
+from the original Anthropic response (Part 1 designed STM before tool
+use was wired). Replaying tool entries without ids would produce
+protocol-invalid messages.
+
+**Practical failure mode**: a cross-turn query that depends on the
+details of a prior turn's tool output — "what confidence did you get?",
+"show me the second result", "summarize what you just classified" —
+will either fail or hallucinate. The model has the prior turn's
+*assistant text* (which usually reframes the tool result in natural
+language), so simple references usually work. Pointed references to
+structured tool output do not.
+
+**Acceptable for Week 7 demo**: the scripted demo scenarios all keep
+follow-up references at the natural-language level, dodging the failure
+mode. The chatbot eval set's two-turn scenarios (memory recall) cross
+*conversation_id*, not tool history — also unaffected.
+
+**Real fix**: extend STM to preserve `tool_use_id` linkages and replay
+the full `(user, assistant + tool_use blocks, user-with-tool_result
+blocks)` triplet across turn boundaries. Touches `short_term_memory_service`
+(new column on the stored record) and `_stm_window_to_messages` (rebuild
+the full message sequence). Deferred to post-Friday polish.
