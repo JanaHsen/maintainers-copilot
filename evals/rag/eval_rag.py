@@ -33,10 +33,15 @@ import httpx
 
 from app.config import get_settings
 from app.domain.retrieve import ChunkFilters
-from app.infra import embedding_client
+from app.infra import anthropic_client, embedding_client
+from app.infra.anthropic_client import AnthropicError
 from app.infra.minio_client import DATA_BUCKET, ensure_bucket, get_client
 from app.repositories import chunk_repository
 from evals.rag.score import mrr, ndcg, recall_at_k
+
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+ANSWER_PROMPT_PATH = PROMPTS_DIR / "rag_answer.md"
+JUDGE_PROMPT_PATH = PROMPTS_DIR / "rag_judge.md"
 
 logger = logging.getLogger("evals.rag.eval_rag")
 
@@ -151,6 +156,150 @@ def run_retrieval(
             }
         )
     return predictions
+
+
+def _load_prompt(path: Path) -> tuple[str, str]:
+    """Parse a two-section system+user markdown prompt into (system, user_template)."""
+    raw = path.read_text(encoding="utf-8")
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buf: list[str] = []
+    for line in raw.splitlines():
+        if line.startswith("## "):
+            if current is not None:
+                sections[current] = "\n".join(buf).strip()
+            current = line[3:].strip().lower()
+            buf = []
+        elif current is not None:
+            buf.append(line)
+    if current is not None:
+        sections[current] = "\n".join(buf).strip()
+    if "system" not in sections or "user" not in sections:
+        raise ValueError(f"{path} missing required '## System' / '## User' sections")
+    return sections["system"], sections["user"]
+
+
+def _format_contexts(parents: list[dict[str, Any]]) -> str:
+    """Render retrieved parent chunks into a string block the prompts expect."""
+    lines: list[str] = []
+    for i, p in enumerate(parents):
+        header = (
+            f"[{i + 1}] source_type={p.get('source_type', '?')} "
+            f"source_id={p.get('source_id', '?')} "
+            f"section={p.get('section_path', '')!r}"
+        )
+        lines.append(header)
+        lines.append(p.get("content", ""))
+        lines.append("---")
+    return "\n".join(lines)
+
+
+def generate_answer(question: str, contexts: str) -> str:
+    """One Claude Haiku call against prompts/rag_answer.md."""
+    system, user_template = _load_prompt(ANSWER_PROMPT_PATH)
+    user = user_template.replace("{{question}}", question).replace(
+        "{{contexts}}", contexts
+    )
+    return anthropic_client.complete(system=system, user=user, max_tokens=400)
+
+
+def judge_answer(question: str, contexts: str, answer: str) -> dict[str, float]:
+    """One Claude Haiku call against prompts/rag_judge.md; returns parsed scores."""
+    system, user_template = _load_prompt(JUDGE_PROMPT_PATH)
+    user = (
+        user_template.replace("{{question}}", question)
+        .replace("{{contexts}}", contexts)
+        .replace("{{answer}}", answer)
+    )
+    raw = anthropic_client.complete(system=system, user=user, max_tokens=200)
+    # The judge prompt forces JSON-only output; strip any accidental fences.
+    text = raw.strip()
+    if text.startswith("```"):
+        # remove leading fence + optional language tag
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rstrip("`").strip()
+        if text.endswith("```"):
+            text = text[:-3].strip()
+    data = json.loads(text)
+    out = {
+        "faithfulness": float(data["faithfulness"]),
+        "answer_relevancy": float(data["answer_relevancy"]),
+        "context_recall": float(data["context_recall"]),
+    }
+    for k, v in out.items():
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"judge returned {k} = {v}; expected [0, 1]")
+    return out
+
+
+def fetch_parent_contexts(parent_ids: list[str]) -> list[dict[str, Any]]:
+    """Return parent rows in the requested order, dropping unknown ids."""
+    parents = chunk_repository.fetch_parents(parent_ids)
+    out: list[dict[str, Any]] = []
+    for pid in parent_ids:
+        p = parents.get(pid)
+        if p is None:
+            continue
+        out.append(
+            {
+                "chunk_id": p.chunk_id,
+                "content": p.content,
+                "source_type": p.source_type,
+                "source_id": p.source_id,
+                "section_path": p.section_path,
+            }
+        )
+    return out
+
+
+def run_generation_eval(
+    predictions: list[dict[str, Any]],
+    golden: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """For each prediction, generate an answer + judge it. Aggregate to means."""
+    per_question: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    for pred, row in zip(predictions, golden, strict=True):
+        parent_ids = pred.get("retrieved_chunk_ids", [])[:5]
+        parents = fetch_parent_contexts(parent_ids)
+        contexts_block = _format_contexts(parents)
+        try:
+            answer = generate_answer(row["question"], contexts_block)
+        except AnthropicError as exc:
+            logger.warning("answer generation failed for %s: %s", row["question_id"], exc)
+            skipped.append(row["question_id"])
+            continue
+        try:
+            scores = judge_answer(row["question"], contexts_block, answer)
+        except (AnthropicError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning("judge failed for %s: %s", row["question_id"], exc)
+            skipped.append(row["question_id"])
+            continue
+        per_question.append(
+            {
+                "question_id": row["question_id"],
+                "answer": answer,
+                **scores,
+            }
+        )
+    if not per_question:
+        return {
+            "faithfulness": 0.0,
+            "answer_relevancy": 0.0,
+            "context_recall": 0.0,
+            "n_scored": 0,
+            "n_skipped": len(skipped),
+            "skipped_question_ids": skipped,
+        }
+    return {
+        "faithfulness": sum(p["faithfulness"] for p in per_question) / len(per_question),
+        "answer_relevancy": sum(p["answer_relevancy"] for p in per_question) / len(per_question),
+        "context_recall": sum(p["context_recall"] for p in per_question) / len(per_question),
+        "n_scored": len(per_question),
+        "n_skipped": len(skipped),
+        "skipped_question_ids": skipped,
+        "per_question_scores": per_question,
+    }
 
 
 def compute_metrics(
@@ -269,6 +418,10 @@ def main(argv: list[str] | None = None) -> int:
         "--max-questions", type=int, default=None,
         help="Cap the number of golden questions evaluated (for smoke runs).",
     )
+    parser.add_argument(
+        "--with-generation", action="store_true",
+        help="Run the frozen-Claude-Haiku generation eval (T036). Costs Anthropic credits.",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -291,13 +444,17 @@ def main(argv: list[str] | None = None) -> int:
         k_for_metrics=30,
     )
     retrieval_metrics = compute_metrics(predictions, golden)
+    generation_block: dict[str, Any] = {}
+    if args.with_generation:
+        print("Running generation eval (frozen Claude Haiku judge)…", file=sys.stderr)
+        generation_block = run_generation_eval(predictions, golden)
     report = build_report(
         args.mode,
         corpus_run_id=corpus_run_id,
         golden=golden,
         predictions=predictions,
         retrieval_metrics=retrieval_metrics,
-        generation_metrics={},  # T036 populates this
+        generation_metrics=generation_block,
     )
 
     print(json.dumps({"retrieval": report["retrieval"], "n_examples": report["n_examples"]}, indent=2))
